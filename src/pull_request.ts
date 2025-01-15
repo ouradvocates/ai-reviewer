@@ -2,7 +2,7 @@ import { info, warning } from "@actions/core";
 import config from "./config";
 import { initOctokit } from "./octokit";
 import { loadContext } from "./context";
-import { runSummaryPrompt, AIComment, runReviewPrompt } from "./prompts";
+import { runSummaryPrompt, AIComment, runReviewPrompt, fillPRTemplate } from "./prompts";
 import {
   buildLoadingMessage,
   buildReviewSummary,
@@ -38,7 +38,42 @@ export async function handlePullRequest() {
     return;
   }
 
-  // Get commit messages
+  // Only update description if this is a new PR and has a template
+  if (context.payload.action === "opened" && pull_request.body?.includes("<!--") && pull_request.body?.includes("-->")) {
+    info("New PR detected with template - will fill it automatically");
+    
+    // Get commit messages
+    const { data: commits } = await octokit.rest.pulls.listCommits({
+      ...context.repo,
+      pull_number: pull_request.number,
+    });
+    info(`successfully fetched commit messages`);
+
+    // Get modified files for description generation
+    const { data: files } = await octokit.rest.pulls.listFiles({
+      ...context.repo,
+      pull_number: pull_request.number,
+    });
+
+    // Fill the PR template
+    const filledTemplate = await fillPRTemplate({
+      prTitle: pull_request.title,
+      prDescription: pull_request.body || "",
+      commitMessages: commits.map((commit) => commit.commit.message),
+      files: files,
+    });
+
+    // Update PR description
+    await octokit.rest.pulls.update({
+      ...context.repo,
+      pull_number: pull_request.number,
+      body: filledTemplate,
+    });
+
+    info("Updated PR description with filled template");
+  }
+
+  // Get commit messages (moved this down since we might have already fetched it above)
   const { data: commits } = await octokit.rest.pulls.listCommits({
     ...context.repo,
     pull_number: pull_request.number,

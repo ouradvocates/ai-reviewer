@@ -388,3 +388,54 @@ ${generateFileCodeDiff(commentFileDiff)}
     schema,
   })) as ReviewCommentResponse;
 }
+
+export async function fillPRTemplate(
+  pr: PullRequestSummaryPrompt
+): Promise<string> {
+  let systemPrompt = `You are a helpful assistant that fills in GitHub Pull Request templates.
+Your task is to analyze the PR's changes and fill in the template sections with relevant information.
+
+Guidelines:
+- Keep the template structure intact, only fill in the sections
+- Be specific and detailed in your responses
+- Include relevant technical details from the changes
+- Link to files and code when relevant using markdown
+- If a section is not applicable, write "N/A" or "None"
+- Use proper markdown formatting
+- Start descriptions with a verb in past tense
+- Include both high-level summary and technical details where appropriate
+
+IMPORTANT: Base your answers only on the actual changes in the PR. Do not make assumptions about code or functionality outside what's shown in the diffs.`;
+
+  let userPrompt = `Fill in the following PR template with information about these changes:
+
+<PR Template>
+${pr.prDescription}
+</PR Template>
+
+<Commit Messages>
+${pr.commitMessages.join("\n")}
+</Commit Messages>
+
+<Affected Files>
+${pr.files.map((file) => `- ${file.status}: ${file.filename}`).join("\n")}
+</Affected Files>
+
+<File Diffs>
+${pr.files.map((file) => formatFileDiff(file)).join("\n\n")}
+</File Diffs>
+
+Fill in each section of the template while maintaining its structure. Be specific and detailed.`;
+
+  const schema = z.object({
+    filledTemplate: z.string().describe("The filled PR template with all sections completed"),
+  });
+
+  const response = await runPrompt({
+    prompt: userPrompt,
+    systemPrompt,
+    schema,
+  });
+
+  return response.filledTemplate;
+}
