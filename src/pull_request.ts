@@ -40,7 +40,8 @@ export async function handlePullRequest() {
 
   // Only update description if this is a new PR
   if (context.payload.action === "opened" || context.payload.action === "reopened") {
-    info(`PR #${pull_request.number} opened, checking description...`);
+    info(`PR #${pull_request.number} opened, checking description and title...`);
+    info(`Current title: "${pull_request.title}"`);
     info(`Current description: ${pull_request.body || '(empty)'}`);
     
     // Get commit messages
@@ -56,21 +57,31 @@ export async function handlePullRequest() {
       pull_number: pull_request.number,
     });
 
-    // Fill the PR template
-    const filledTemplate = await fillPRTemplate({
+    // Generate PR summary first to get a good title
+    const summary = await runSummaryPrompt({
       prTitle: pull_request.title,
       prDescription: pull_request.body || "",
       commitMessages: commits.map((commit) => commit.commit.message),
       files: files,
     });
 
-    // Update PR description
+    // Fill the PR template using the generated summary
+    const filledTemplate = await fillPRTemplate({
+      prTitle: summary.title, // Use the generated title
+      prDescription: pull_request.body || "",
+      commitMessages: commits.map((commit) => commit.commit.message),
+      files: files,
+    });
+
+    // Update PR title and description
     await octokit.rest.pulls.update({
       ...context.repo,
       pull_number: pull_request.number,
+      title: summary.title,
       body: filledTemplate,
     });
 
+    info(`Updated PR title to: "${summary.title}"`);
     info("Updated PR description with filled template");
   }
 
