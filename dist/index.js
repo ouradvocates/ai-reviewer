@@ -406,7 +406,7 @@ Fill in the description while maintaining any existing structure. Be specific an
 `,A+=`| File | Summary |
 `,A+=`|:----------|:---------------|
 `;for(let s of e.files){let o=s.filename.replace(/\|/g,"\\|"),n=s.summary.replace(/\|/g,"\\|");A+=`| \`${o}\` | ${n} |
-`}let r={commits:t};return A+=PRESUBMIT_SIGNATURE,A+=vQ,A+=gb,A+=JSON.stringify(r),A+=ub,A}function S2(e,t,A,r,s){let{owner:o,repo:n}=e.repo,i="";r.length===0?i+=`\u2705 **LGTM!**
+`}let r={commits:t};return A+=vQ,A+=gb,A+=JSON.stringify(r),A+=ub,A}function S2(e,t,A,r,s){let{owner:o,repo:n}=e.repo,i="";r.length===0?i+=`\u2705 **LGTM!**
 
 `:i+=`\u{1F6A8} **Pull request needs attention.**
 

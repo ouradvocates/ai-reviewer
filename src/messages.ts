@@ -97,7 +97,6 @@ export function buildOverviewMessage(
     commits: commits,
   };
 
-  message += PRESUBMIT_SIGNATURE;
   message += OVERVIEW_MESSAGE_SIGNATURE;
   message += PAYLOAD_TAG_OPEN;
   message += JSON.stringify(payload);
