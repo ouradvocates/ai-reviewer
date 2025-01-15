@@ -396,8 +396,9 @@ export async function fillPRTemplate(
 Your task is to analyze the PR's changes and fill in the template sections with relevant information.
 
 Guidelines:
-- If the description contains a template (sections with headers, checkboxes, or comment markers), preserve its structure and fill in each section
-- If there's no template, generate a well-structured description with sections for: Summary, Changes, Testing, and Impact
+- Start with a "## Summary" section that provides a high-level overview of the changes
+- After the summary, if the description contains a template, preserve its structure and fill in each section
+- If there's no template, generate a well-structured description with sections for: Description, Changes, Testing, and Impact
 - Be specific and detailed in your responses
 - Include relevant technical details from the changes
 - Link to files and code when relevant using markdown
@@ -411,7 +412,8 @@ Guidelines:
 IMPORTANT: 
 - Base your answers only on the actual changes in the PR
 - Do not make assumptions about code or functionality outside what's shown in the diffs
-- If the original description contains any valuable information, preserve it while expanding upon it`;
+- If the original description contains any valuable information, preserve it while expanding upon it
+- The Summary section should be concise but informative, focusing on the main changes and their purpose`;
 
   let userPrompt = `Fill in the following PR description with information about these changes:
 
@@ -435,7 +437,7 @@ ${pr.files.map((file) => `- ${file.status}: ${file.filename}`).join("\n")}
 ${pr.files.map((file) => formatFileDiff(file)).join("\n\n")}
 </File Diffs>
 
-Fill in the description while maintaining any existing structure. Be specific and detailed.`;
+Start with a Summary section that provides a high-level overview, then fill in the rest of the description while maintaining any existing structure. Be specific and detailed.`;
 
   const schema = z.object({
     filledTemplate: z.string().describe("The filled PR description with all sections completed, preserving any existing structure"),

@@ -74,12 +74,7 @@ export function buildOverviewMessage(
   summary: PullRequestSummary,
   commits: string[]
 ): string {
-  let message = `## PR Summary\n\n`;
-
-  // Add description with proper spacing
-  message += `${summary.description.trim()}\n\n`;
-
-  message += `### Changes\n\n`;
+  let message = `### Changes\n\n`;
 
   // Create table with proper column alignment and escaping
   message += `| File | Summary |\n`;
