@@ -396,7 +396,8 @@ export async function fillPRTemplate(
 Your task is to analyze the PR's changes and fill in the template sections with relevant information.
 
 Guidelines:
-- Keep the template structure intact, only fill in the sections
+- If the description contains a template (sections with headers, checkboxes, or comment markers), preserve its structure and fill in each section
+- If there's no template, generate a well-structured description with sections for: Summary, Changes, Testing, and Impact
 - Be specific and detailed in your responses
 - Include relevant technical details from the changes
 - Link to files and code when relevant using markdown
@@ -404,14 +405,23 @@ Guidelines:
 - Use proper markdown formatting
 - Start descriptions with a verb in past tense
 - Include both high-level summary and technical details where appropriate
+- Preserve any existing GitHub issue references (e.g., "Fixes #123")
+- Keep any existing task lists or checkboxes, just fill in the details
 
-IMPORTANT: Base your answers only on the actual changes in the PR. Do not make assumptions about code or functionality outside what's shown in the diffs.`;
+IMPORTANT: 
+- Base your answers only on the actual changes in the PR
+- Do not make assumptions about code or functionality outside what's shown in the diffs
+- If the original description contains any valuable information, preserve it while expanding upon it`;
 
-  let userPrompt = `Fill in the following PR template with information about these changes:
+  let userPrompt = `Fill in the following PR description with information about these changes:
 
-<PR Template>
+<Current PR Description>
 ${pr.prDescription}
-</PR Template>
+</Current PR Description>
+
+<PR Title>
+${pr.prTitle}
+</PR Title>
 
 <Commit Messages>
 ${pr.commitMessages.join("\n")}
@@ -425,10 +435,10 @@ ${pr.files.map((file) => `- ${file.status}: ${file.filename}`).join("\n")}
 ${pr.files.map((file) => formatFileDiff(file)).join("\n\n")}
 </File Diffs>
 
-Fill in each section of the template while maintaining its structure. Be specific and detailed.`;
+Fill in the description while maintaining any existing structure. Be specific and detailed.`;
 
   const schema = z.object({
-    filledTemplate: z.string().describe("The filled PR template with all sections completed"),
+    filledTemplate: z.string().describe("The filled PR description with all sections completed, preserving any existing structure"),
   });
 
   const response = await runPrompt({

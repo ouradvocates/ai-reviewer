@@ -38,9 +38,10 @@ export async function handlePullRequest() {
     return;
   }
 
-  // Only update description if this is a new PR and has a template
-  if (context.payload.action === "opened" && pull_request.body?.includes("<!--") && pull_request.body?.includes("-->")) {
-    info("New PR detected with template - will fill it automatically");
+  // Only update description if this is a new PR
+  if (context.payload.action === "opened" || context.payload.action === "reopened") {
+    info(`PR #${pull_request.number} opened, checking description...`);
+    info(`Current description: ${pull_request.body || '(empty)'}`);
     
     // Get commit messages
     const { data: commits } = await octokit.rest.pulls.listCommits({
