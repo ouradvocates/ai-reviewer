@@ -332,8 +332,9 @@ ${lb(t)}
 Your task is to analyze the PR's changes and fill in the template sections with relevant information.
 
 Guidelines:
-- If the description contains a template (sections with headers, checkboxes, or comment markers), preserve its structure and fill in each section
-- If there's no template, generate a well-structured description with sections for: Summary, Changes, Testing, and Impact
+- Start with a "## Summary" section that provides a high-level overview of the changes
+- After the summary, if the description contains a template, preserve its structure and fill in each section
+- If there's no template, generate a well-structured description with sections for: Description, Changes, Testing, and Impact
 - Be specific and detailed in your responses
 - Include relevant technical details from the changes
 - Link to files and code when relevant using markdown
@@ -347,7 +348,8 @@ Guidelines:
 IMPORTANT: 
 - Base your answers only on the actual changes in the PR
 - Do not make assumptions about code or functionality outside what's shown in the diffs
-- If the original description contains any valuable information, preserve it while expanding upon it`,A=`Fill in the following PR description with information about these changes:
+- If the original description contains any valuable information, preserve it while expanding upon it
+- The Summary section should be concise but informative, focusing on the main changes and their purpose`,A=`Fill in the following PR description with information about these changes:
 
 <Current PR Description>
 ${e.prDescription}
@@ -373,7 +375,7 @@ ${e.files.map(o=>cb(o)).join(`
 `)}
 </File Diffs>
 
-Fill in the description while maintaining any existing structure. Be specific and detailed.`,r=E.object({filledTemplate:E.string().describe("The filled PR description with all sections completed, preserving any existing structure")});return(await Wg({prompt:A,systemPrompt:t,schema:r})).filledTemplate}var R2=dA(uw()),vQ=`
+Start with a Summary section that provides a high-level overview, then fill in the rest of the description while maintaining any existing structure. Be specific and detailed.`,r=E.object({filledTemplate:E.string().describe("The filled PR description with all sections completed, preserving any existing structure")});return(await Wg({prompt:A,systemPrompt:t,schema:r})).filledTemplate}var R2=dA(uw()),vQ=`
 <!-- presubmit.ai: overview message -->`,NQ=`
 <!-- presubmit.ai: comment -->`,ub=`
 <!-- presubmit.ai: payload --`,Eb=`
@@ -397,13 +399,9 @@ Fill in the description while maintaining any existing structure. Be specific an
 `}return o+=`
 </details>
 
-`,o+=vQ,o}function T2(e,t){let A=`## PR Summary
+`,o+=vQ,o}function T2(e,t){let A=`### Changes
 
-`;A+=`${e.description.trim()}
-
-`,A+=`### Changes
-
-`,A+=`| File | Summary |
+`;A+=`| File | Summary |
 `,A+=`|:----------|:---------------|
 `;for(let s of e.files){let o=s.filename.replace(/\|/g,"\\|"),n=s.summary.replace(/\|/g,"\\|");A+=`| \`${o}\` | ${n} |
 `}let r={commits:t};return A+=vQ,A+=ub,A+=JSON.stringify(r),A+=Eb,A}function S2(e,t,A,r,s){let{owner:o,repo:n}=e.repo,i="";r.length===0?i+=`\u2705 **LGTM!**
