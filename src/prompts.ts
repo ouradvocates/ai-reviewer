@@ -26,13 +26,14 @@ export async function runSummaryPrompt(
 ): Promise<PullRequestSummary> {
   let systemPrompt = `You are a helpful assistant that summarizes Git Pull Requests (PRs).`;
 
-  systemPrompt += `Your task is to provide a full description for the PR content - title, type, description and affected file summaries.\n`;
+  systemPrompt += `Your task is to provide a concise description for the PR content - title, type, description and affected file summaries.\n`;
 
   systemPrompt += `
+- VERY IMPORTANT: Be as brief as possible while maintaining clarity. Use short, direct sentences.
 - Keep in mind that the 'Original title', 'Original description' and 'Commit messages' sections may be partial, simplistic, non-informative or out of date. Hence, compare them to the PR diff code, and use them only as a reference.
 - The generated title and description should prioritize the most significant changes.
 - When quoting variables or names from the code, use backticks (\`).
-- Return a summary for each single affected file or if there is nothing to summarize simply use the status of the change (ie. "New file").
+- Return a one-line summary for each affected file or if there is nothing to summarize simply use the status of the change (ie. "New file").
 - Start the overview with a verb at past tense like "Started", "Commented", "Generated" etc...
 
 IMPORTANT: Do not make assumptions about the code outside the diff. Do not assume variable could be optional if you don't see the type declaration. Do not suggest null checks unless you are sure this could lead to a runtime error.
@@ -142,10 +143,12 @@ export async function runReviewPrompt(
 ): Promise<PullRequestReview> {
   let systemPrompt = `
 <IMPORTANT INSTRUCTIONS>
-You are an experienced senior software engineer tasked with reviewing a Git Pull Request (PR). Your goal is to provide comments to improve code quality, catch typos, potential bugs or security issues, and provide meaningful code suggestions when applicable. You should not make comments about adding comments, about code formatting, about code style or give implementation suggestions.
+You are an experienced senior software engineer tasked with reviewing a Git Pull Request (PR). Your goal is to provide concise comments to improve code quality, catch typos, potential bugs or security issues, and provide meaningful code suggestions when applicable. You should not make comments about adding comments, about code formatting, about code style or give implementation suggestions.
+
+VERY IMPORTANT: Keep all comments as brief as possible. Use short, direct sentences. Focus only on the most critical issues.
     
 The review should focus on new code added in the PR code diff (lines starting with '+') and be actionable.
- 
+
 The PR diff will have the following structure:
 ======
 ## File: 'src/file1.py'
@@ -331,7 +334,9 @@ export async function runReviewCommentPrompt({
   commentThread,
   commentFileDiff,
 }: ReviewCommentPrompt): Promise<ReviewCommentResponse> {
-  let systemPrompt = `You are a helpful senior software engineer that reviews comments on Git Pull Requests (PRs). Your task is to provide a response to a comment on a PR review. The comment might be part of a longer comment thread, so make sure to respond to the specific comment and not the whole thread.
+  let systemPrompt = `You are a helpful senior software engineer that reviews comments on Git Pull Requests (PRs). Your task is to provide a brief response to a comment on a PR review. The comment might be part of a longer comment thread, so make sure to respond to the specific comment and not the whole thread.
+
+VERY IMPORTANT: Keep your response as brief as possible. Use short, direct sentences. Get straight to the point.
 
 The comment thread is specific to a line or multiple lines of code in a specific file. Keep that in mind when writing your response, but do not assume the code is complete or correct. Also, the comment might request you to suggest some changes or improvements outside the code snippet, so judge accordingly.
 
@@ -396,24 +401,24 @@ export async function fillPRTemplate(
 Your task is to analyze the PR's changes and fill in the template sections with relevant information.
 
 Guidelines:
-- Start with a "## Summary" section that provides a high-level overview of the changes
+- VERY IMPORTANT: Be as brief as possible in all sections. Use short, direct sentences.
+- Start with a "## Summary" section that provides a concise high-level overview (2-3 sentences max)
 - After the summary, if the description contains a template, preserve its structure and fill in each section
-- If there's no template, generate a well-structured description with sections for: Description, Changes, Testing, and Impact
-- Be specific and detailed in your responses
-- Include relevant technical details from the changes
+- If there's no template, generate a brief description with sections for: Description (2-3 sentences), Changes (bullet points), Testing (1-2 sentences), and Impact (1 sentence)
+- Be specific but concise in your responses
+- Include only the most important technical details
 - Link to files and code when relevant using markdown
-- If a section is not applicable, write "N/A" or "None"
+- If a section is not applicable, write "N/A"
 - Use proper markdown formatting
 - Start descriptions with a verb in past tense
-- Include both high-level summary and technical details where appropriate
 - Preserve any existing GitHub issue references (e.g., "Fixes #123")
-- Keep any existing task lists or checkboxes, just fill in the details
+- Keep any existing task lists or checkboxes, just fill in the details briefly
 
 IMPORTANT: 
 - Base your answers only on the actual changes in the PR
 - Do not make assumptions about code or functionality outside what's shown in the diffs
 - If the original description contains any valuable information, preserve it while expanding upon it
-- The Summary section should be concise but informative, focusing on the main changes and their purpose`;
+- The Summary section should be extremely concise, focusing only on the key changes`;
 
   let userPrompt = `Fill in the following PR description with information about these changes:
 

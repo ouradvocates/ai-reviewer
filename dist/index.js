@@ -174,12 +174,13 @@ ${t}`),A}function lb(e){let t=e.hunks.map(r=>Gde(r)).join(`
 
 `),A=`## File ${e.status}: `;return e.previous_filename&&(A+=`'${e.previous_filename}' \u2192 `),A+=`'${e.filename}'`,t.length&&(A+=`
 
-${t}`),console.log(A),A}function Mde(e,t,A){return A.filter(r=>{let s=r.comments[0];return s&&r.file===e.filename&&!s.in_reply_to_id&&s.path===e.filename&&s.body.length&&s.line&&s.line<=t.endLine&&s.line>=t.startLine&&(!s.start_line||s.start_line<=t.endLine&&s.start_line>=t.startLine)})}async function gb(e){let t="You are a helpful assistant that summarizes Git Pull Requests (PRs).";t+=`Your task is to provide a full description for the PR content - title, type, description and affected file summaries.
+${t}`),console.log(A),A}function Mde(e,t,A){return A.filter(r=>{let s=r.comments[0];return s&&r.file===e.filename&&!s.in_reply_to_id&&s.path===e.filename&&s.body.length&&s.line&&s.line<=t.endLine&&s.line>=t.startLine&&(!s.start_line||s.start_line<=t.endLine&&s.start_line>=t.startLine)})}async function gb(e){let t="You are a helpful assistant that summarizes Git Pull Requests (PRs).";t+=`Your task is to provide a concise description for the PR content - title, type, description and affected file summaries.
 `,t+=`
+- VERY IMPORTANT: Be as brief as possible while maintaining clarity. Use short, direct sentences.
 - Keep in mind that the 'Original title', 'Original description' and 'Commit messages' sections may be partial, simplistic, non-informative or out of date. Hence, compare them to the PR diff code, and use them only as a reference.
 - The generated title and description should prioritize the most significant changes.
 - When quoting variables or names from the code, use backticks (\`).
-- Return a summary for each single affected file or if there is nothing to summarize simply use the status of the change (ie. "New file").
+- Return a one-line summary for each affected file or if there is nothing to summarize simply use the status of the change (ie. "New file").
 - Start the overview with a verb at past tense like "Started", "Commented", "Generated" etc...
 
 IMPORTANT: Do not make assumptions about the code outside the diff. Do not assume variable could be optional if you don't see the type declaration. Do not suggest null checks unless you are sure this could lead to a runtime error.
@@ -210,10 +211,12 @@ ${e.files.map(o=>cb(o)).join(`
 Make sure each affected file is summarized and it's part of the returned JSON.
 `,r=E.object({filename:E.string().describe("The full file path of the relevant file"),summary:E.string().describe("Concise summary of the file changes in markdown format (max 70 words)"),title:E.string().describe("An informative title for the changes in this file, describing its main theme (5-10 words).")}),s=E.object({title:E.string().describe("Informative title of the PR, describing its main theme (10 words max)"),description:E.string().describe("Informative description of the PR, describing its main theme"),files:E.array(r).describe("List of files affected in the PR and summaries of their changes"),type:E.array(E.enum(["BUG","TESTS","ENHANCEMENT","DOCUMENTATION","SECURITY","OTHER"])).describe("One or more types that describe this PR's main theme.")});return await Wg({prompt:A,systemPrompt:t,schema:s})}async function b2(e){let t=`
 <IMPORTANT INSTRUCTIONS>
-You are an experienced senior software engineer tasked with reviewing a Git Pull Request (PR). Your goal is to provide comments to improve code quality, catch typos, potential bugs or security issues, and provide meaningful code suggestions when applicable. You should not make comments about adding comments, about code formatting, about code style or give implementation suggestions.
+You are an experienced senior software engineer tasked with reviewing a Git Pull Request (PR). Your goal is to provide concise comments to improve code quality, catch typos, potential bugs or security issues, and provide meaningful code suggestions when applicable. You should not make comments about adding comments, about code formatting, about code style or give implementation suggestions.
+
+VERY IMPORTANT: Keep all comments as brief as possible. Use short, direct sentences. Focus only on the most critical issues.
     
 The review should focus on new code added in the PR code diff (lines starting with '+') and be actionable.
- 
+
 The PR diff will have the following structure:
 ======
 ## File: 'src/file1.py'
@@ -301,7 +304,9 @@ ${e.files.map(n=>lb(n)).join(`
 
 `)}
 </PR File Diffs>
-`,r=E.object({file:E.string().describe("The full file path of the relevant file"),start_line:E.number().describe("The relevant line number, from a '__new hunk__' section, where the comment starts (inclusive). Should correspond to the prefix of the first line in the 'highlighted_code' snippet. If comment spans a single line, it should equal the 'end_line'"),end_line:E.number().describe("The relevant line number, from a '__new hunk__' section, where the comment ends (inclusive). Should correspond to the prefix of the last line in the 'highlighted_code' snippet. If comment spans a single line, it should equal the 'start_line'"),content:E.string().describe("An actionable comment to enhance, improve or fix the new code introduced in the PR. Use markdown formatting."),header:E.string().describe("A concise, single-sentence overview of the comment. Focus on the 'what'. Be general, and avoid method or variable names."),highlighted_code:E.string().describe("A short code snippet from a '__new hunk__' section that the comment is applicable for.Include only complete code lines, without line numbers. This snippet should represent the full specific PR code targeted for comment, at its first line should match 'startLine' and last line match 'endLine'. If the code snippet is a single line, that line should match both 'startLine' and 'endLine'"),label:E.string().describe("A single, descriptive label that best characterizes the suggestion type. Possible labels include 'security', 'possible bug', 'possible issue', 'performance', 'enhancement', 'best practice', 'maintainability', 'readability'. Other relevant labels are also acceptable."),critical:E.boolean().describe("True if the comment is critical and the PR should not be merged without addressing the comment. False otherwise.")}),s=E.object({estimated_effort_to_review:E.number().min(1).max(5).describe("Estimate, on a scale of 1-5 (inclusive), the time and effort required to review this PR by an experienced and knowledgeable developer. 1 means short and easy review , 5 means long and hard review. Take into account the size, complexity, quality, and the needed changes of the PR code diff."),score:E.number().min(0).max(100).describe("Rate this PR on a scale of 0-100 (inclusive), where 0 means the worst possible PR code, and 100 means PR code of the highest quality, without any bugs or performance issues, that is ready to be merged immediately and run in production at scale."),has_relevant_tests:E.boolean().describe("True if the PR includes relevant tests added or updated. False otherwise."),security_concerns:E.string().describe("Does this PR code introduce possible vulnerabilities such as exposure of sensitive information (e.g., API keys, secrets, passwords), or security concerns like SQL injection, XSS, CSRF, and others ? Answer 'No' (without explaining why) if there are no possible issues. If there are security concerns or issues, start your answer with a short header, such as: 'Sensitive information exposure: ...', 'SQL injection: ...' etc. Explain your answer. Be specific and give examples if possible")}),o=E.object({review:s.describe("The full review of the PR"),comments:E.array(r).describe("Comments about possible bugs, security concerns, code quality, typos or regressions introduced in this PR.")});return await Wg({prompt:A,systemPrompt:t,schema:o})}async function k2({commentThread:e,commentFileDiff:t}){let A=`You are a helpful senior software engineer that reviews comments on Git Pull Requests (PRs). Your task is to provide a response to a comment on a PR review. The comment might be part of a longer comment thread, so make sure to respond to the specific comment and not the whole thread.
+`,r=E.object({file:E.string().describe("The full file path of the relevant file"),start_line:E.number().describe("The relevant line number, from a '__new hunk__' section, where the comment starts (inclusive). Should correspond to the prefix of the first line in the 'highlighted_code' snippet. If comment spans a single line, it should equal the 'end_line'"),end_line:E.number().describe("The relevant line number, from a '__new hunk__' section, where the comment ends (inclusive). Should correspond to the prefix of the last line in the 'highlighted_code' snippet. If comment spans a single line, it should equal the 'start_line'"),content:E.string().describe("An actionable comment to enhance, improve or fix the new code introduced in the PR. Use markdown formatting."),header:E.string().describe("A concise, single-sentence overview of the comment. Focus on the 'what'. Be general, and avoid method or variable names."),highlighted_code:E.string().describe("A short code snippet from a '__new hunk__' section that the comment is applicable for.Include only complete code lines, without line numbers. This snippet should represent the full specific PR code targeted for comment, at its first line should match 'startLine' and last line match 'endLine'. If the code snippet is a single line, that line should match both 'startLine' and 'endLine'"),label:E.string().describe("A single, descriptive label that best characterizes the suggestion type. Possible labels include 'security', 'possible bug', 'possible issue', 'performance', 'enhancement', 'best practice', 'maintainability', 'readability'. Other relevant labels are also acceptable."),critical:E.boolean().describe("True if the comment is critical and the PR should not be merged without addressing the comment. False otherwise.")}),s=E.object({estimated_effort_to_review:E.number().min(1).max(5).describe("Estimate, on a scale of 1-5 (inclusive), the time and effort required to review this PR by an experienced and knowledgeable developer. 1 means short and easy review , 5 means long and hard review. Take into account the size, complexity, quality, and the needed changes of the PR code diff."),score:E.number().min(0).max(100).describe("Rate this PR on a scale of 0-100 (inclusive), where 0 means the worst possible PR code, and 100 means PR code of the highest quality, without any bugs or performance issues, that is ready to be merged immediately and run in production at scale."),has_relevant_tests:E.boolean().describe("True if the PR includes relevant tests added or updated. False otherwise."),security_concerns:E.string().describe("Does this PR code introduce possible vulnerabilities such as exposure of sensitive information (e.g., API keys, secrets, passwords), or security concerns like SQL injection, XSS, CSRF, and others ? Answer 'No' (without explaining why) if there are no possible issues. If there are security concerns or issues, start your answer with a short header, such as: 'Sensitive information exposure: ...', 'SQL injection: ...' etc. Explain your answer. Be specific and give examples if possible")}),o=E.object({review:s.describe("The full review of the PR"),comments:E.array(r).describe("Comments about possible bugs, security concerns, code quality, typos or regressions introduced in this PR.")});return await Wg({prompt:A,systemPrompt:t,schema:o})}async function k2({commentThread:e,commentFileDiff:t}){let A=`You are a helpful senior software engineer that reviews comments on Git Pull Requests (PRs). Your task is to provide a brief response to a comment on a PR review. The comment might be part of a longer comment thread, so make sure to respond to the specific comment and not the whole thread.
+
+VERY IMPORTANT: Keep your response as brief as possible. Use short, direct sentences. Get straight to the point.
 
 The comment thread is specific to a line or multiple lines of code in a specific file. Keep that in mind when writing your response, but do not assume the code is complete or correct. Also, the comment might request you to suggest some changes or improvements outside the code snippet, so judge accordingly.
 
@@ -332,24 +337,24 @@ ${lb(t)}
 Your task is to analyze the PR's changes and fill in the template sections with relevant information.
 
 Guidelines:
-- Start with a "## Summary" section that provides a high-level overview of the changes
+- VERY IMPORTANT: Be as brief as possible in all sections. Use short, direct sentences.
+- Start with a "## Summary" section that provides a concise high-level overview (2-3 sentences max)
 - After the summary, if the description contains a template, preserve its structure and fill in each section
-- If there's no template, generate a well-structured description with sections for: Description, Changes, Testing, and Impact
-- Be specific and detailed in your responses
-- Include relevant technical details from the changes
+- If there's no template, generate a brief description with sections for: Description (2-3 sentences), Changes (bullet points), Testing (1-2 sentences), and Impact (1 sentence)
+- Be specific but concise in your responses
+- Include only the most important technical details
 - Link to files and code when relevant using markdown
-- If a section is not applicable, write "N/A" or "None"
+- If a section is not applicable, write "N/A"
 - Use proper markdown formatting
 - Start descriptions with a verb in past tense
-- Include both high-level summary and technical details where appropriate
 - Preserve any existing GitHub issue references (e.g., "Fixes #123")
-- Keep any existing task lists or checkboxes, just fill in the details
+- Keep any existing task lists or checkboxes, just fill in the details briefly
 
 IMPORTANT: 
 - Base your answers only on the actual changes in the PR
 - Do not make assumptions about code or functionality outside what's shown in the diffs
 - If the original description contains any valuable information, preserve it while expanding upon it
-- The Summary section should be concise but informative, focusing on the main changes and their purpose`,A=`Fill in the following PR description with information about these changes:
+- The Summary section should be extremely concise, focusing only on the key changes`,A=`Fill in the following PR description with information about these changes:
 
 <Current PR Description>
 ${e.prDescription}
