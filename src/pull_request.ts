@@ -361,6 +361,26 @@ async function submitReview(
         c.start_line && c.start_line < c.end_line ? "RIGHT" : undefined,
     }));
 
+    // Find existing review summary
+    const { data: reviews } = await octokit.pulls.listReviews({
+      ...context.repo,
+      pull_number: pull_request.number,
+    });
+
+    const lastReview = reviews
+      .reverse()
+      .find(r => r.body?.includes("### Review Summary"));
+
+    // Build new review summary
+    const newSummary = buildReviewSummary(
+      context,
+      files,
+      commits,
+      lineComments,
+      skippedComments,
+      lastReview?.body // Pass existing summary to be extended
+    );
+
     const review = await octokit.pulls.createReview({
       ...context.repo,
       pull_number: pull_request.number,
@@ -373,13 +393,7 @@ async function submitReview(
       pull_number: pull_request.number,
       review_id: review.data.id,
       event: "COMMENT",
-      body: buildReviewSummary(
-        context,
-        files,
-        commits,
-        lineComments,
-        skippedComments
-      ),
+      body: newSummary,
     });
   } catch (error) {
     warning(`error submitting review: ${error}`);
