@@ -15,6 +15,7 @@ import { FileDiff, parseFileDiff } from "./diff";
 import { Octokit } from "@octokit/action";
 import { Context } from "@actions/github/lib/context";
 import { buildComment, listPullRequestCommentThreads } from "./comments";
+import { findTicketFromBranch, searchRelatedTickets, createJiraTicket, updateTicketState } from "./jira";
 
 export async function handlePullRequest() {
   const context = await loadContext();
@@ -36,6 +37,17 @@ export async function handlePullRequest() {
 
   if (shouldIgnorePullRequest(pull_request)) {
     return;
+  }
+
+  // Handle PR close/merge events
+  if (context.payload.action === "closed") {
+    // Extract JIRA ticket key from PR description if it exists
+    const ticketMatch = (pull_request.body || "").match(/\[([A-Z]+-\d+)\]/);
+    if (ticketMatch) {
+      const ticketKey = ticketMatch[1];
+      await updateTicketState(ticketKey, pull_request.merged ? "merged" : "closed");
+      return;
+    }
   }
 
   // Only update description if this is a new PR
@@ -65,24 +77,50 @@ export async function handlePullRequest() {
       files: files,
     });
 
+    // Try to find or create JIRA ticket
+    let jiraTicket = null;
+    
+    // First check branch name
+    if (pull_request.head.ref) {
+      jiraTicket = await findTicketFromBranch(pull_request.head.ref);
+    }
+
+    // If no ticket in branch name, search for related tickets
+    if (!jiraTicket) {
+      jiraTicket = await searchRelatedTickets(summary.title, summary.description);
+    }
+
+    // If still no ticket, create one
+    if (!jiraTicket && config.jiraDefaultProject) {
+      jiraTicket = await createJiraTicket(summary.title, summary.description);
+    }
+
     // Fill the PR template using the generated summary
     const filledTemplate = await fillPRTemplate({
-      prTitle: summary.title, // Use the generated title
+      prTitle: summary.title,
       prDescription: pull_request.body || "",
       commitMessages: commits.map((commit) => commit.commit.message),
       files: files,
     });
+
+    // Add JIRA ticket reference if found
+    const description = jiraTicket 
+      ? `Relates to [${jiraTicket}](${config.jiraHost}/browse/${jiraTicket})\n\n${filledTemplate}`
+      : filledTemplate;
 
     // Update PR title and description
     await octokit.rest.pulls.update({
       ...context.repo,
       pull_number: pull_request.number,
       title: summary.title,
-      body: filledTemplate,
+      body: description,
     });
 
     info(`Updated PR title to: "${summary.title}"`);
     info("Updated PR description with filled template");
+    if (jiraTicket) {
+      info(`Linked JIRA ticket: ${jiraTicket}`);
+    }
   }
 
   // Get commit messages (moved this down since we might have already fetched it above)
