@@ -102,10 +102,13 @@ export async function createJiraTicket(title: string, description: string): Prom
 export async function updateTicketState(ticketKey: string, prState: "closed" | "merged"): Promise<void> {
   try {
     const targetState = prState === "merged" ? "Shipped" : "Closed";
+    info(`Attempting to transition JIRA ticket ${ticketKey} to ${targetState}`);
     await transitionTicket(ticketKey, targetState);
-    info(`Updated JIRA ticket ${ticketKey} to ${targetState}`);
+    info(`Successfully updated JIRA ticket ${ticketKey} to ${targetState}`);
   } catch (error) {
     warning(`Error updating JIRA ticket ${ticketKey} state: ${error}`);
+    // Log the full error for debugging
+    console.error(error);
   }
 }
 

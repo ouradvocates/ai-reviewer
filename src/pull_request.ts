@@ -43,10 +43,15 @@ export async function handlePullRequest() {
   if (context.payload.action === "closed") {
     // Extract JIRA ticket key from PR description if it exists
     const ticketMatch = (pull_request.body || "").match(/\[([A-Z]+-\d+)\]/);
+    info(`PR body: ${pull_request.body}`);
+    info(`Ticket match: ${JSON.stringify(ticketMatch)}`);
     if (ticketMatch) {
       const ticketKey = ticketMatch[1];
+      info(`Found ticket key: ${ticketKey}, PR merged: ${pull_request.merged}`);
       await updateTicketState(ticketKey, pull_request.merged ? "merged" : "closed");
       return;
+    } else {
+      warning('No JIRA ticket key found in PR description');
     }
   }
 
