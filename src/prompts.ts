@@ -97,6 +97,7 @@ Make sure each affected file is summarized and it's part of the returned JSON.
           "ENHANCEMENT",
           "DOCUMENTATION",
           "SECURITY",
+          "REFACTOR",
           "OTHER",
         ])
       )
