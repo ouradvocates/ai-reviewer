@@ -100,7 +100,17 @@ export async function handlePullRequest() {
       jiraTicket = await createJiraTicket(
         summary.title, 
         summary.description,
-        pull_request.user.login // Pass the GitHub username of the PR opener
+        pull_request.user.login, // Pass the GitHub username of the PR opener
+        {
+          prUrl: pull_request.html_url,
+          prNumber: pull_request.number,
+          branchName: pull_request.head.ref,
+          files: files.map(f => ({ 
+            filename: f.filename,
+            status: f.status
+          })),
+          commitMessages: commits.map(c => c.commit.message)
+        }
       );
     }
 

@@ -107,8 +107,87 @@ export async function searchRelatedTickets(title: string, description: string): 
   return null;
 }
 
-export async function createJiraTicket(title: string, description: string, githubUsername?: string): Promise<string | null> {
+export async function createJiraTicket(
+  title: string, 
+  description: string, 
+  githubUsername?: string,
+  prContext?: {
+    prUrl?: string;
+    prNumber?: number;
+    branchName?: string;
+    files?: Array<{ filename: string; status: string }>;
+    commitMessages?: string[];
+  }
+): Promise<string | null> {
   try {
+    // Build a detailed description
+    let detailedDescription = `h2. Overview\n${description}\n\n`;
+
+    if (prContext) {
+      // Add PR information
+      if (prContext.prUrl) {
+        detailedDescription += `h2. Pull Request\n* Pull Request: ${prContext.prUrl}\n`;
+      }
+      if (prContext.branchName) {
+        detailedDescription += `* Branch: ${prContext.branchName}\n`;
+      }
+
+      // Add file changes section if available
+      if (prContext.files && prContext.files.length > 0) {
+        detailedDescription += `\nh2. Changes\n`;
+        const changes = {
+          added: prContext.files.filter(f => f.status === 'added'),
+          modified: prContext.files.filter(f => f.status === 'modified'),
+          removed: prContext.files.filter(f => f.status === 'removed'),
+          renamed: prContext.files.filter(f => f.status === 'renamed')
+        };
+
+        if (changes.added.length > 0) {
+          detailedDescription += `\nh3. Added Files\n`;
+          changes.added.forEach(file => {
+            detailedDescription += `* +${file.filename}+\n`;
+          });
+        }
+
+        if (changes.modified.length > 0) {
+          detailedDescription += `\nh3. Modified Files\n`;
+          changes.modified.forEach(file => {
+            detailedDescription += `* ${file.filename}\n`;
+          });
+        }
+
+        if (changes.removed.length > 0) {
+          detailedDescription += `\nh3. Removed Files\n`;
+          changes.removed.forEach(file => {
+            detailedDescription += `* -${file.filename}-\n`;
+          });
+        }
+
+        if (changes.renamed.length > 0) {
+          detailedDescription += `\nh3. Renamed Files\n`;
+          changes.renamed.forEach(file => {
+            detailedDescription += `* ${file.filename}\n`;
+          });
+        }
+      }
+
+      // Add commit messages if available
+      if (prContext.commitMessages && prContext.commitMessages.length > 0) {
+        detailedDescription += `\nh2. Commits\n`;
+        prContext.commitMessages.forEach(msg => {
+          detailedDescription += `* ${msg.split('\n')[0]}\n`; // Only use first line of commit message
+        });
+      }
+    }
+
+    // Add creation context
+    detailedDescription += `\nh2. Additional Information\n`;
+    detailedDescription += `* Created by: AI Reviewer\n`;
+    if (githubUsername) {
+      detailedDescription += `* PR Author: ${githubUsername}\n`;
+    }
+    detailedDescription += `* Created on: ${new Date().toISOString().split('T')[0]}\n`;
+
     const response = await fetch(`${config.jiraHost}/rest/api/2/issue`, {
       method: 'POST',
       headers: {
@@ -119,7 +198,7 @@ export async function createJiraTicket(title: string, description: string, githu
         fields: {
           project: { key: config.jiraDefaultProject },
           summary: title,
-          description: description,
+          description: detailedDescription,
           issuetype: { name: 'Task' }
         }
       })
