@@ -6,6 +6,10 @@ interface JiraTicket {
   fields: {
     summary: string;
     description: string;
+    customfield_10014?: string; // Epic link field
+    issuetype?: {
+      name: string;
+    };
   };
 }
 
@@ -14,21 +18,57 @@ interface JiraTransition {
   name: string;
 }
 
+interface JiraEpic {
+  key: string;
+  fields: {
+    summary: string;
+    description: string;
+  };
+}
+
 export async function findTicketFromBranch(branchName: string): Promise<string | null> {
   // Common JIRA ticket patterns: PROJECT-123, PRJ-123, etc.
-  const ticketPattern = /([A-Z]+-\d+)/;
-  const match = branchName.match(ticketPattern);
+  const ticketPattern = /([A-Z]+-\d+)/g;
+  const matches = [...branchName.matchAll(ticketPattern)];
   
-  if (match) {
-    const ticketKey = match[1];
-    try {
-      const ticket = await getJiraTicket(ticketKey);
-      if (ticket) {
-        info(`Found JIRA ticket ${ticketKey} from branch name`);
-        return ticketKey;
+  if (matches.length > 0) {
+    const ticketKeys = matches.map(match => match[1]);
+    
+    // If we have multiple tickets, check if one is an Epic
+    if (ticketKeys.length > 1) {
+      for (let i = 0; i < ticketKeys.length; i++) {
+        try {
+          const ticket = await getJiraTicket(ticketKeys[i]);
+          if (ticket) {
+            info(`Found JIRA ticket ${ticketKeys[i]} from branch name`);
+            
+            // Check if any other ticket is an Epic
+            for (let j = 0; j < ticketKeys.length; j++) {
+              if (i !== j) {
+                const otherTicket = await getJiraTicket(ticketKeys[j]);
+                if (otherTicket && await isEpic(ticketKeys[j])) {
+                  await associateTicketWithEpic(ticketKeys[i], ticketKeys[j]);
+                }
+              }
+            }
+            
+            return ticketKeys[i];
+          }
+        } catch (error) {
+          warning(`Error fetching JIRA ticket ${ticketKeys[i]}: ${error}`);
+        }
       }
-    } catch (error) {
-      warning(`Error fetching JIRA ticket ${ticketKey}: ${error}`);
+    } else if (matches.length === 1) {
+      const ticketKey = ticketKeys[0];
+      try {
+        const ticket = await getJiraTicket(ticketKey);
+        if (ticket) {
+          info(`Found JIRA ticket ${ticketKey} from branch name`);
+          return ticketKey;
+        }
+      } catch (error) {
+        warning(`Error fetching JIRA ticket ${ticketKey}: ${error}`);
+      }
     }
   }
   return null;
@@ -87,6 +127,12 @@ export async function createJiraTicket(title: string, description: string): Prom
 
     const data = await response.json();
     const ticketKey = data.key;
+    
+    // Try to find and associate with an Epic
+    const epicKey = await findEpicBySemanticMatch(title, description);
+    if (epicKey) {
+      await associateTicketWithEpic(ticketKey, epicKey);
+    }
     
     // Set initial state to "In Review"
     await transitionTicket(ticketKey, "In Review");
@@ -180,5 +226,104 @@ async function getJiraTicket(ticketKey: string): Promise<JiraTicket | null> {
   } catch (error) {
     warning(`Error fetching JIRA ticket: ${error}`);
     return null;
+  }
+}
+
+async function findEpicBySemanticMatch(ticketSummary: string, ticketDescription: string): Promise<string | null> {
+  // Search for Epics in the project
+  const jql = encodeURIComponent(
+    `project in (${config.jiraProjects}) AND issuetype = Epic AND status != Closed`
+  );
+  
+  try {
+    const response = await fetch(`${config.jiraHost}/rest/api/2/search?jql=${jql}`, {
+      headers: {
+        'Authorization': `Basic ${Buffer.from(`${config.jiraUsername}:${config.jiraApiToken}`).toString('base64')}`,
+        'Content-Type': 'application/json'
+      }
+    });
+
+    if (!response.ok) {
+      throw new Error(`JIRA API error: ${response.statusText}`);
+    }
+
+    const data = await response.json();
+    if (!data.issues || data.issues.length === 0) {
+      return null;
+    }
+
+    // Find the most relevant Epic by comparing summaries
+    const epics = data.issues;
+    let bestMatch: { key: string; score: number } | null = null;
+
+    for (const epic of epics) {
+      const score = calculateRelevanceScore(
+        epic.fields.summary + ' ' + (epic.fields.description || ''),
+        ticketSummary + ' ' + ticketDescription
+      );
+
+      if (!bestMatch || score > bestMatch.score) {
+        bestMatch = { key: epic.key, score };
+      }
+    }
+
+    // Only return if we have a reasonably good match
+    if (bestMatch && bestMatch.score > 0.3) {
+      info(`Found matching Epic ${bestMatch.key} with score ${bestMatch.score}`);
+      return bestMatch.key;
+    }
+  } catch (error) {
+    warning(`Error searching for Epics: ${error}`);
+  }
+  return null;
+}
+
+function calculateRelevanceScore(epicText: string, ticketText: string): number {
+  // Simple word matching algorithm
+  const epicWords = new Set(epicText.toLowerCase().split(/\s+/));
+  const ticketWords = ticketText.toLowerCase().split(/\s+/);
+  
+  let matchCount = 0;
+  for (const word of ticketWords) {
+    if (epicWords.has(word) && word.length > 3) { // Only count meaningful words
+      matchCount++;
+    }
+  }
+  
+  return matchCount / Math.max(epicWords.size, ticketWords.length);
+}
+
+async function associateTicketWithEpic(ticketKey: string, epicKey: string): Promise<void> {
+  try {
+    const response = await fetch(`${config.jiraHost}/rest/api/2/issue/${ticketKey}`, {
+      method: 'PUT',
+      headers: {
+        'Authorization': `Basic ${Buffer.from(`${config.jiraUsername}:${config.jiraApiToken}`).toString('base64')}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        fields: {
+          customfield_10014: epicKey // Epic link field
+        }
+      })
+    });
+
+    if (!response.ok) {
+      throw new Error(`JIRA API error: ${response.statusText}`);
+    }
+
+    info(`Successfully associated ticket ${ticketKey} with Epic ${epicKey}`);
+  } catch (error) {
+    warning(`Error associating ticket with Epic: ${error}`);
+  }
+}
+
+async function isEpic(ticketKey: string): Promise<boolean> {
+  try {
+    const ticket = await getJiraTicket(ticketKey);
+    return ticket?.fields?.issuetype?.name === 'Epic';
+  } catch (error) {
+    warning(`Error checking if ticket ${ticketKey} is an Epic: ${error}`);
+    return false;
   }
 } 
