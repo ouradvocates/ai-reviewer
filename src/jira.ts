@@ -132,18 +132,19 @@ export async function createJiraTicket(title: string, description: string, githu
     const data = await response.json();
     const ticketKey = data.key;
     
-    // Try to find and associate with an Epic
-    const epicKey = await findEpicBySemanticMatch(title, description);
-    if (epicKey) {
-      await associateTicketWithEpic(ticketKey, epicKey);
-    }
-    
-    // Try to assign the ticket to the GitHub user
+    // Since this is a new ticket created by the AI reviewer,
+    // try to assign it to the GitHub user
     if (githubUsername) {
       const jiraAccountId = await findJiraUser(githubUsername);
       if (jiraAccountId) {
         await assignTicketToUser(ticketKey, jiraAccountId);
       }
+    }
+    
+    // Try to find and associate with an Epic
+    const epicKey = await findEpicBySemanticMatch(title, description);
+    if (epicKey) {
+      await associateTicketWithEpic(ticketKey, epicKey);
     }
     
     // Set initial state to "In Review"
