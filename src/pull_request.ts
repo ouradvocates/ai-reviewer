@@ -97,7 +97,11 @@ export async function handlePullRequest() {
 
     // If still no ticket, create one
     if (!jiraTicket && config.jiraDefaultProject) {
-      jiraTicket = await createJiraTicket(summary.title, summary.description);
+      jiraTicket = await createJiraTicket(
+        summary.title, 
+        summary.description,
+        pull_request.user.login // Pass the GitHub username of the PR opener
+      );
     }
 
     // Fill the PR template using the generated summary

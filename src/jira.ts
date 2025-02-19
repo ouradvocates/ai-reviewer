@@ -10,6 +10,10 @@ interface JiraTicket {
     issuetype?: {
       name: string;
     };
+    assignee?: {
+      accountId?: string;
+      name?: string;
+    };
   };
 }
 
@@ -103,7 +107,7 @@ export async function searchRelatedTickets(title: string, description: string): 
   return null;
 }
 
-export async function createJiraTicket(title: string, description: string): Promise<string | null> {
+export async function createJiraTicket(title: string, description: string, githubUsername?: string): Promise<string | null> {
   try {
     const response = await fetch(`${config.jiraHost}/rest/api/2/issue`, {
       method: 'POST',
@@ -132,6 +136,14 @@ export async function createJiraTicket(title: string, description: string): Prom
     const epicKey = await findEpicBySemanticMatch(title, description);
     if (epicKey) {
       await associateTicketWithEpic(ticketKey, epicKey);
+    }
+    
+    // Try to assign the ticket to the GitHub user
+    if (githubUsername) {
+      const jiraAccountId = await findJiraUser(githubUsername);
+      if (jiraAccountId) {
+        await assignTicketToUser(ticketKey, jiraAccountId);
+      }
     }
     
     // Set initial state to "In Review"
@@ -325,5 +337,52 @@ async function isEpic(ticketKey: string): Promise<boolean> {
   } catch (error) {
     warning(`Error checking if ticket ${ticketKey} is an Epic: ${error}`);
     return false;
+  }
+}
+
+async function findJiraUser(githubUsername: string): Promise<string | null> {
+  try {
+    // Search for user by display name or email
+    const response = await fetch(`${config.jiraHost}/rest/api/2/user/search?query=${encodeURIComponent(githubUsername)}`, {
+      headers: {
+        'Authorization': `Basic ${Buffer.from(`${config.jiraUsername}:${config.jiraApiToken}`).toString('base64')}`,
+        'Content-Type': 'application/json'
+      }
+    });
+
+    if (!response.ok) {
+      throw new Error(`JIRA API error: ${response.statusText}`);
+    }
+
+    const users = await response.json();
+    if (users && users.length > 0) {
+      return users[0].accountId;
+    }
+  } catch (error) {
+    warning(`Error finding JIRA user for GitHub username ${githubUsername}: ${error}`);
+  }
+  return null;
+}
+
+async function assignTicketToUser(ticketKey: string, accountId: string): Promise<void> {
+  try {
+    const response = await fetch(`${config.jiraHost}/rest/api/2/issue/${ticketKey}/assignee`, {
+      method: 'PUT',
+      headers: {
+        'Authorization': `Basic ${Buffer.from(`${config.jiraUsername}:${config.jiraApiToken}`).toString('base64')}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        accountId: accountId
+      })
+    });
+
+    if (!response.ok) {
+      throw new Error(`JIRA API error: ${response.statusText}`);
+    }
+
+    info(`Successfully assigned ticket ${ticketKey} to user ${accountId}`);
+  } catch (error) {
+    warning(`Error assigning ticket ${ticketKey} to user: ${error}`);
   }
 } 
