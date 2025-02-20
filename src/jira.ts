@@ -125,66 +125,96 @@ export async function createJiraTicket(
 
     if (prContext) {
       // Add PR information
+      detailedDescription += `h2. Implementation Details\n`;
       if (prContext.prUrl) {
-        detailedDescription += `h2. Pull Request\n* Pull Request: ${prContext.prUrl}\n`;
+        detailedDescription += `* Pull Request: ${prContext.prUrl}\n`;
       }
       if (prContext.branchName) {
-        detailedDescription += `* Branch: ${prContext.branchName}\n`;
+        detailedDescription += `* Implementation Branch: ${prContext.branchName}\n`;
       }
 
-      // Add file changes section if available
+      // Analyze and group changes by feature/component
       if (prContext.files && prContext.files.length > 0) {
-        detailedDescription += `\nh2. Changes\n`;
-        const changes = {
-          added: prContext.files.filter(f => f.status === 'added'),
-          modified: prContext.files.filter(f => f.status === 'modified'),
-          removed: prContext.files.filter(f => f.status === 'removed'),
-          renamed: prContext.files.filter(f => f.status === 'renamed')
-        };
+        const componentChanges = new Map<string, string[]>();
+        
+        prContext.files.forEach(file => {
+          // Extract component from file path (e.g., src/auth/login.ts -> auth)
+          const component = file.filename.split('/').slice(0, -1).pop() || 'other';
+          const changes = componentChanges.get(component) || [];
+          changes.push(file.filename);
+          componentChanges.set(component, changes);
+        });
 
-        if (changes.added.length > 0) {
-          detailedDescription += `\nh3. Added Files\n`;
-          changes.added.forEach(file => {
-            detailedDescription += `* +${file.filename}+\n`;
-          });
-        }
-
-        if (changes.modified.length > 0) {
-          detailedDescription += `\nh3. Modified Files\n`;
-          changes.modified.forEach(file => {
-            detailedDescription += `* ${file.filename}\n`;
-          });
-        }
-
-        if (changes.removed.length > 0) {
-          detailedDescription += `\nh3. Removed Files\n`;
-          changes.removed.forEach(file => {
-            detailedDescription += `* -${file.filename}-\n`;
-          });
-        }
-
-        if (changes.renamed.length > 0) {
-          detailedDescription += `\nh3. Renamed Files\n`;
-          changes.renamed.forEach(file => {
-            detailedDescription += `* ${file.filename}\n`;
-          });
+        if (componentChanges.size > 0) {
+          detailedDescription += `\nh2. Components Modified\n`;
+          for (const [component, files] of componentChanges) {
+            detailedDescription += `h3. ${component.charAt(0).toUpperCase() + component.slice(1)}\n`;
+            detailedDescription += `* Number of files modified: ${files.length}\n`;
+          }
         }
       }
 
-      // Add commit messages if available
+      // Extract feature information from commit messages
       if (prContext.commitMessages && prContext.commitMessages.length > 0) {
-        detailedDescription += `\nh2. Commits\n`;
+        detailedDescription += `\nh2. Feature Implementation\n`;
+        
+        // Group similar commits and extract feature information
+        const features = new Set<string>();
         prContext.commitMessages.forEach(msg => {
-          detailedDescription += `* ${msg.split('\n')[0]}\n`; // Only use first line of commit message
+          const firstLine = msg.split('\n')[0].toLowerCase();
+          if (firstLine.startsWith('feat:') || firstLine.startsWith('feature:')) {
+            features.add(msg.split('\n')[0].substring(firstLine.indexOf(':') + 1).trim());
+          }
+        });
+
+        if (features.size > 0) {
+          detailedDescription += `h3. Features Added/Modified\n`;
+          features.forEach(feature => {
+            detailedDescription += `* ${feature}\n`;
+          });
+        }
+
+        // Add implementation notes based on commit messages
+        detailedDescription += `\nh3. Implementation Notes\n`;
+        const implementationNotes = prContext.commitMessages
+          .map(msg => msg.split('\n')[0])
+          .filter(msg => !msg.toLowerCase().startsWith('feat:') && !msg.toLowerCase().startsWith('feature:'))
+          .map(msg => {
+            // Clean up commit message to be more readable
+            msg = msg.replace(/^(fix|chore|refactor|style|test|docs):\s*/i, '');
+            return msg.charAt(0).toUpperCase() + msg.slice(1);
+          });
+
+        implementationNotes.forEach(note => {
+          detailedDescription += `* ${note}\n`;
         });
       }
     }
 
+    // Add technical impact section
+    detailedDescription += `\nh2. Technical Impact\n`;
+    if (prContext?.files) {
+      const impactPoints = [];
+      const testFiles = prContext.files.filter(f => f.filename.includes('test') || f.filename.includes('spec'));
+      const configFiles = prContext.files.filter(f => f.filename.includes('config') || f.filename.endsWith('.json') || f.filename.endsWith('.yml'));
+      
+      if (testFiles.length > 0) {
+        impactPoints.push(`* Test Coverage: Added/modified ${testFiles.length} test files`);
+      }
+      if (configFiles.length > 0) {
+        impactPoints.push(`* Configuration Changes: Updated ${configFiles.length} configuration files`);
+      }
+      
+      if (impactPoints.length > 0) {
+        detailedDescription += impactPoints.join('\n') + '\n';
+      }
+    }
+
     // Add creation context
-    detailedDescription += `\nh2. Additional Information\n`;
+    detailedDescription += `\nh2. Metadata\n`;
     detailedDescription += `* Created by: AI Reviewer\n`;
     if (githubUsername) {
-      detailedDescription += `* PR Author: ${githubUsername}\n`;
+      detailedDescription += `* Implementation Author: ${githubUsername}\n`;
     }
     detailedDescription += `* Created on: ${new Date().toISOString().split('T')[0]}\n`;
 
