@@ -8,3 +8,9 @@ branding:
 runs:
   using: "node20"
   main: "dist/index.js"
+
+inputs:
+  style_guide_rules:
+    required: false
+    description: 'Custom style guide rules that will be enforced during review by generating critical comments'
+    default: ''
