@@ -97,6 +97,13 @@ export async function handlePullRequest() {
 
     // If still no ticket, create one
     if (!jiraTicket && config.jiraDefaultProject) {
+      // Try to get the user's email from the commit
+      let userEmail;
+      if (commits.length > 0 && commits[0].commit.author) {
+        userEmail = commits[0].commit.author.email;
+        info(`Found GitHub user email from commit: ${userEmail}`);
+      }
+
       jiraTicket = await createJiraTicket(
         summary.title, 
         summary.description,
@@ -109,7 +116,8 @@ export async function handlePullRequest() {
             filename: f.filename,
             status: f.status
           })),
-          commitMessages: commits.map(c => c.commit.message)
+          commitMessages: commits.map(c => c.commit.message),
+          userEmail // Pass the GitHub user's email
         }
       );
     }

@@ -30,6 +30,20 @@ interface JiraEpic {
   };
 }
 
+// Pre-defined mapping from GitHub usernames to JIRA emails
+const GITHUB_TO_JIRA_MAP: Record<string, string> = {
+  'srslafazan': 'shain.lafazan@ouradvocates.com',
+  "BillBabeaux": "bill.babeaux@ouradvocates.com",
+  "bryanmorganoverbey": "bryan.overbey@ouradvocates.com",
+  "CharleyLanusse": "charley@ouradvocates.com",
+  "gordondri": "gordon.dri@ouradvocates.com",
+  "j314159": "josh.miller@ouradvocates.com",
+  "kylewhitaker": "kyle.whitaker@ouradvocates.com",
+  "Paradxil": "hunter.stratton@ouradvocates.com",
+  "rhymeswithlion": "brian.cruz@ouradvocates.com",
+  "taharbenoudjit": "tahar.benoudjit@ouradvocates.com",
+};
+
 export async function findTicketFromBranch(branchName: string): Promise<string | null> {
   // Common JIRA ticket patterns: PROJECT-123, PRJ-123, etc.
   const ticketPattern = /([A-Z]+-\d+)/g;
@@ -117,6 +131,7 @@ export async function createJiraTicket(
     branchName?: string;
     files?: Array<{ filename: string; status: string }>;
     commitMessages?: string[];
+    userEmail?: string; // GitHub user email
   }
 ): Promise<string | null> {
   try {
@@ -244,7 +259,7 @@ export async function createJiraTicket(
     // Since this is a new ticket created by the AI reviewer,
     // try to assign it to the GitHub user
     if (githubUsername) {
-      const jiraAccountId = await findJiraUser(githubUsername);
+      const jiraAccountId = await findJiraUser(githubUsername, prContext?.userEmail);
       if (jiraAccountId) {
         await assignTicketToUser(ticketKey, jiraAccountId);
       }
@@ -450,10 +465,34 @@ async function isEpic(ticketKey: string): Promise<boolean> {
   }
 }
 
-async function findJiraUser(githubUsername: string): Promise<string | null> {
+async function findJiraUser(githubUsername: string, githubEmail?: string): Promise<string | null> {
   try {
-    // Search for user by display name or email
-    const response = await fetch(`${config.jiraHost}/rest/api/2/user/search?query=${encodeURIComponent(githubUsername)}`, {
+    // First check if we have a pre-defined mapping
+    const mappedEmail = GITHUB_TO_JIRA_MAP[githubUsername];
+    if (mappedEmail) {
+      info(`Using pre-defined JIRA email mapping for ${githubUsername}: ${mappedEmail}`);
+      
+      // Search JIRA by the mapped email
+      const response = await fetch(`${config.jiraHost}/rest/api/2/user/search?query=${encodeURIComponent(mappedEmail)}`, {
+        headers: {
+          'Authorization': `Basic ${Buffer.from(`${config.jiraUsername}:${config.jiraApiToken}`).toString('base64')}`,
+          'Content-Type': 'application/json'
+        }
+      });
+
+      if (!response.ok) {
+        throw new Error(`JIRA API error: ${response.statusText}`);
+      }
+
+      const users = await response.json();
+      if (users && users.length > 0) {
+        info(`Found JIRA user by mapped email: ${mappedEmail}`);
+        return users[0].accountId;
+      }
+    }
+
+    // If no mapping or mapping didn't yield results, try username
+    let response = await fetch(`${config.jiraHost}/rest/api/2/user/search?query=${encodeURIComponent(githubUsername)}`, {
       headers: {
         'Authorization': `Basic ${Buffer.from(`${config.jiraUsername}:${config.jiraApiToken}`).toString('base64')}`,
         'Content-Type': 'application/json'
@@ -464,10 +503,33 @@ async function findJiraUser(githubUsername: string): Promise<string | null> {
       throw new Error(`JIRA API error: ${response.statusText}`);
     }
 
-    const users = await response.json();
+    let users = await response.json();
     if (users && users.length > 0) {
+      info(`Found JIRA user by GitHub username: ${githubUsername}`);
       return users[0].accountId;
     }
+
+    // If no match by username and we have an email from GitHub, try that
+    if (githubEmail) {
+      response = await fetch(`${config.jiraHost}/rest/api/2/user/search?query=${encodeURIComponent(githubEmail)}`, {
+        headers: {
+          'Authorization': `Basic ${Buffer.from(`${config.jiraUsername}:${config.jiraApiToken}`).toString('base64')}`,
+          'Content-Type': 'application/json'
+        }
+      });
+
+      if (!response.ok) {
+        throw new Error(`JIRA API error: ${response.statusText}`);
+      }
+
+      users = await response.json();
+      if (users && users.length > 0) {
+        info(`Found JIRA user by GitHub email: ${githubEmail}`);
+        return users[0].accountId;
+      }
+    }
+
+    warning(`No matching JIRA user found for GitHub user ${githubUsername}${githubEmail ? ` with email ${githubEmail}` : ''}`);
   } catch (error) {
     warning(`Error finding JIRA user for GitHub username ${githubUsername}: ${error}`);
   }
