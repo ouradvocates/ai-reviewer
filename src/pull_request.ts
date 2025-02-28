@@ -15,7 +15,16 @@ import { FileDiff, parseFileDiff } from "./diff";
 import { Octokit } from "@octokit/action";
 import { Context } from "@actions/github/lib/context";
 import { buildComment, listPullRequestCommentThreads } from "./comments";
-import { findTicketFromBranch, searchRelatedTickets, createJiraTicket, updateTicketState } from "./jira";
+import { 
+  findTicketFromBranch, 
+  searchRelatedTickets, 
+  createJiraTicket, 
+  updateTicketState, 
+  findTicketsInCommitMessages, 
+  getTicketType, 
+  associateTicketWithEpic, 
+  isEpic 
+} from "./jira";
 
 export async function handlePullRequest() {
   const context = await loadContext();
@@ -39,20 +48,46 @@ export async function handlePullRequest() {
     return;
   }
 
+  // Get commit messages for both PR open and close events
+  const { data: commits } = await octokit.rest.pulls.listCommits({
+    ...context.repo,
+    pull_number: pull_request.number,
+  });
+  info(`successfully fetched commit messages`);
+  const commitMessages = commits.map((commit) => commit.commit.message);
+
   // Handle PR close/merge events
   if (context.payload.action === "closed") {
-    // Extract JIRA ticket key from PR description if it exists
-    const ticketMatch = (pull_request.body || "").match(/\[([A-Z]+-\d+)\]/);
-    info(`PR body: ${pull_request.body}`);
-    info(`Ticket match: ${JSON.stringify(ticketMatch)}`);
-    if (ticketMatch) {
-      const ticketKey = ticketMatch[1];
-      info(`Found ticket key: ${ticketKey}, PR merged: ${pull_request.merged}`);
-      await updateTicketState(ticketKey, pull_request.merged ? "merged" : "closed");
-      return;
-    } else {
-      warning('No JIRA ticket key found in PR description');
+    // First check for tickets in PR description
+    const ticketsFromDescription: string[] = [];
+    const ticketMatches = [...(pull_request.body || "").matchAll(/\[([A-Z]+-\d+)\]/g)];
+    
+    if (ticketMatches.length > 0) {
+      for (const match of ticketMatches) {
+        ticketsFromDescription.push(match[1]);
+      }
+      info(`Found ticket keys in PR description: ${ticketsFromDescription.join(', ')}`);
     }
+    
+    // Then check for tickets in commit messages
+    const ticketsFromCommits = await findTicketsInCommitMessages(commitMessages);
+    info(`Found ticket keys in commit messages: ${ticketsFromCommits.join(', ')}`);
+    
+    // Combine all found tickets
+    const allTickets = [...new Set([...ticketsFromDescription, ...ticketsFromCommits])];
+    
+    if (allTickets.length > 0) {
+      info(`Processing ${allTickets.length} JIRA tickets: ${allTickets.join(', ')}`);
+      
+      // Update state for each ticket based on type
+      for (const ticketKey of allTickets) {
+        await updateTicketState(ticketKey, pull_request.merged ? "merged" : "closed");
+      }
+    } else {
+      warning('No JIRA ticket keys found in PR description or commit messages');
+    }
+    
+    return;
   }
 
   // Only update description if this is a new PR
@@ -61,13 +96,6 @@ export async function handlePullRequest() {
     info(`Current title: "${pull_request.title}"`);
     info(`Current description: ${pull_request.body || '(empty)'}`);
     
-    // Get commit messages
-    const { data: commits } = await octokit.rest.pulls.listCommits({
-      ...context.repo,
-      pull_number: pull_request.number,
-    });
-    info(`successfully fetched commit messages`);
-
     // Get modified files for description generation
     const { data: files } = await octokit.rest.pulls.listFiles({
       ...context.repo,
@@ -78,25 +106,49 @@ export async function handlePullRequest() {
     const summary = await runSummaryPrompt({
       prTitle: pull_request.title,
       prDescription: pull_request.body || "",
-      commitMessages: commits.map((commit) => commit.commit.message),
+      commitMessages: commitMessages,
       files: files,
     });
 
-    // Try to find or create JIRA ticket
-    let jiraTicket = null;
+    // Try to find JIRA tickets
+    let jiraTickets: string[] = [];
+    let primaryTicket: string | null = null;
+    let epicTicket: string | null = null;
     
     // First check branch name
     if (pull_request.head.ref) {
-      jiraTicket = await findTicketFromBranch(pull_request.head.ref);
+      const branchTicket = await findTicketFromBranch(pull_request.head.ref);
+      if (branchTicket) {
+        jiraTickets.push(branchTicket);
+        primaryTicket = branchTicket;
+      }
+    }
+    
+    // Then check commit messages
+    const commitTickets = await findTicketsInCommitMessages(commitMessages);
+    
+    // Add any new tickets found in commits
+    for (const ticket of commitTickets) {
+      if (!jiraTickets.includes(ticket)) {
+        jiraTickets.push(ticket);
+        // If we don't have a primary ticket yet, use the first one from commits
+        if (!primaryTicket) {
+          primaryTicket = ticket;
+        }
+      }
+    }
+    
+    // If no tickets found yet, search for related tickets
+    if (jiraTickets.length === 0) {
+      const relatedTicket = await searchRelatedTickets(summary.title, summary.description);
+      if (relatedTicket) {
+        jiraTickets.push(relatedTicket);
+        primaryTicket = relatedTicket;
+      }
     }
 
-    // If no ticket in branch name, search for related tickets
-    if (!jiraTicket) {
-      jiraTicket = await searchRelatedTickets(summary.title, summary.description);
-    }
-
-    // If still no ticket, create one
-    if (!jiraTicket && config.jiraDefaultProject) {
+    // If still no tickets, create one
+    if (jiraTickets.length === 0 && config.jiraDefaultProject) {
       // Try to get the user's email from the commit
       let userEmail;
       if (commits.length > 0 && commits[0].commit.author) {
@@ -104,7 +156,7 @@ export async function handlePullRequest() {
         info(`Found GitHub user email from commit: ${userEmail}`);
       }
 
-      jiraTicket = await createJiraTicket(
+      const newTicket = await createJiraTicket(
         summary.title, 
         summary.description,
         pull_request.user.login, // Pass the GitHub username of the PR opener
@@ -116,23 +168,80 @@ export async function handlePullRequest() {
             filename: f.filename,
             status: f.status
           })),
-          commitMessages: commits.map(c => c.commit.message),
+          commitMessages: commitMessages,
           userEmail // Pass the GitHub user's email
         }
       );
+      
+      if (newTicket) {
+        jiraTickets.push(newTicket);
+        primaryTicket = newTicket;
+      }
     }
-
+    
+    // Categorize tickets and find Epics
+    const ticketTypes: Record<string, string> = {};
+    
+    for (const ticket of jiraTickets) {
+      const ticketType = await getTicketType(ticket);
+      if (ticketType) {
+        ticketTypes[ticket] = ticketType;
+        
+        // If this is an Epic, mark it
+        if (ticketType === 'Epic') {
+          epicTicket = ticket;
+        }
+      }
+    }
+    
+    // If we found tickets but no Epic, try to find a related Epic
+    if (jiraTickets.length > 0 && !epicTicket && primaryTicket) {
+      // Try to find an Epic to associate with
+      for (const ticket of jiraTickets) {
+        if (ticket !== primaryTicket && ticketTypes[ticket] !== 'Epic') {
+          // Link non-primary, non-Epic tickets to the primary ticket
+          await associateTicketWithEpic(ticket, primaryTicket);
+        }
+      }
+    }
+    
     // Fill the PR template using the generated summary
     const filledTemplate = await fillPRTemplate({
       prTitle: summary.title,
       prDescription: pull_request.body || "",
-      commitMessages: commits.map((commit) => commit.commit.message),
+      commitMessages: commitMessages,
       files: files,
     });
 
-    // Add JIRA ticket reference if found
-    const description = jiraTicket 
-      ? `Relates to [${jiraTicket}](${config.jiraHost}/browse/${jiraTicket})\n\n${filledTemplate}`
+    // Build ticket references for PR description
+    let ticketReferences = '';
+    if (jiraTickets.length > 0) {
+      // Group tickets by type
+      const ticketsByType: Record<string, string[]> = {};
+      
+      for (const ticket of jiraTickets) {
+        const type = ticketTypes[ticket] || 'Task';
+        if (!ticketsByType[type]) {
+          ticketsByType[type] = [];
+        }
+        ticketsByType[type].push(ticket);
+      }
+      
+      // Build references section
+      ticketReferences = '## JIRA References\n\n';
+      
+      for (const type in ticketsByType) {
+        ticketReferences += `### ${type}s\n`;
+        for (const ticket of ticketsByType[type]) {
+          ticketReferences += `- [${ticket}](${config.jiraHost}/browse/${ticket})\n`;
+        }
+        ticketReferences += '\n';
+      }
+    }
+
+    // Add JIRA ticket references to description
+    const description = jiraTickets.length > 0
+      ? `${ticketReferences}\n${filledTemplate}`
       : filledTemplate;
 
     // Update PR title and description
@@ -145,19 +254,15 @@ export async function handlePullRequest() {
 
     info(`Updated PR title to: "${summary.title}"`);
     info("Updated PR description with filled template");
-    if (jiraTicket) {
-      info(`Linked JIRA ticket: ${jiraTicket}`);
+    if (jiraTickets.length > 0) {
+      info(`Linked JIRA tickets: ${jiraTickets.join(', ')}`);
     }
   }
 
-  // Get commit messages (moved this down since we might have already fetched it above)
-  const { data: commits } = await octokit.rest.pulls.listCommits({
-    ...context.repo,
-    pull_number: pull_request.number,
-  });
-  info(`successfully fetched commit messages`);
-
-  // Find or create overview comment with the summary
+  // Continue with the rest of the function for review generation
+  // We'll reuse the commits and commitMessages variables from above
+  
+  // Maybe fetch review comments
   const { data: existingComments } = await octokit.rest.issues.listComments({
     ...context.repo,
     issue_number: pull_request.number,
@@ -176,11 +281,11 @@ export async function handlePullRequest() {
     : [];
 
   // Get modified files
-  const { data: files } = await octokit.rest.pulls.listFiles({
+  const { data: filesToDiff } = await octokit.rest.pulls.listFiles({
     ...context.repo,
     pull_number: pull_request.number,
   });
-  let filesToReview = files.map((file) =>
+  let filesToReview = filesToDiff.map((file) =>
     parseFileDiff(file, reviewCommentThreads)
   );
   info(`successfully fetched file diffs`);
@@ -258,13 +363,13 @@ export async function handlePullRequest() {
   }
 
   // Generate PR summary
-  const summary = await runSummaryPrompt({
+  const reviewSummary = await runSummaryPrompt({
     prTitle: pull_request.title,
     prDescription: pull_request.body || "",
-    commitMessages: commits.map((commit) => commit.commit.message),
-    files: files,
+    commitMessages: commitMessages,
+    files: filesToDiff,
   });
-  info(`generated pull request summary: ${summary.title}`);
+  info(`generated pull request summary: ${reviewSummary.title}`);
 
   // Update PR title if @presubmitai is mentioned in the title
   if (
@@ -275,7 +380,7 @@ export async function handlePullRequest() {
     await octokit.rest.pulls.update({
       ...context.repo,
       pull_number: pull_request.number,
-      title: summary.title,
+      title: reviewSummary.title,
       // body: summary.description,
     });
   }
@@ -285,7 +390,7 @@ export async function handlePullRequest() {
     ...context.repo,
     comment_id: overviewComment.id,
     body: buildOverviewMessage(
-      summary,
+      reviewSummary,
       commits.map((c) => c.sha)
     ),
   });
@@ -297,13 +402,13 @@ export async function handlePullRequest() {
     files: filesToReview,
     prTitle: pull_request.title,
     prDescription: pull_request.body || "",
-    prSummary: summary.description,
+    prSummary: reviewSummary.description,
   });
   info(`reviewed pull request`);
 
   // Post review comments
   const comments = review.comments.filter(
-    (c) => c.content.trim() !== "" && files.some((f) => f.filename === c.file)
+    (c) => c.content.trim() !== "" && filesToDiff.some((f) => f.filename === c.file)
   );
   await submitReview(
     octokit,

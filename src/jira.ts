@@ -282,9 +282,68 @@ export async function createJiraTicket(
   }
 }
 
+export async function findTicketsInCommitMessages(commitMessages: string[]): Promise<string[]> {
+  // Common JIRA ticket patterns: PROJECT-123, PRJ-123, etc.
+  const ticketPattern = /([A-Z]+-\d+)/g;
+  const foundTickets = new Set<string>();
+  
+  for (const message of commitMessages) {
+    const matches = [...message.matchAll(ticketPattern)];
+    if (matches.length > 0) {
+      matches.forEach(match => {
+        const ticketKey = match[1];
+        foundTickets.add(ticketKey);
+      });
+    }
+  }
+  
+  // Validate that these are actual tickets
+  const validatedTickets: string[] = [];
+  for (const ticketKey of foundTickets) {
+    try {
+      const ticket = await getJiraTicket(ticketKey);
+      if (ticket) {
+        info(`Found JIRA ticket ${ticketKey} in commit messages`);
+        validatedTickets.push(ticketKey);
+      }
+    } catch (error) {
+      warning(`Error fetching JIRA ticket ${ticketKey}: ${error}`);
+    }
+  }
+  
+  return validatedTickets;
+}
+
+export async function getTicketType(ticketKey: string): Promise<string | null> {
+  try {
+    const ticket = await getJiraTicket(ticketKey);
+    return ticket?.fields?.issuetype?.name || null;
+  } catch (error) {
+    warning(`Error getting ticket type for ${ticketKey}: ${error}`);
+    return null;
+  }
+}
+
 export async function updateTicketState(ticketKey: string, prState: "closed" | "merged"): Promise<void> {
   try {
-    const targetState = prState === "merged" ? "Shipped" : "Closed";
+    // Only transition if PR is merged
+    if (prState !== "merged") {
+      info(`PR was closed but not merged, not updating JIRA ticket ${ticketKey}`);
+      return;
+    }
+    
+    // Check ticket type
+    const ticketType = await getTicketType(ticketKey);
+    info(`Ticket ${ticketKey} is of type: ${ticketType}`);
+    
+    // Don't close Epics
+    if (ticketType === "Epic") {
+      info(`Not closing Epic ticket ${ticketKey} as requested`);
+      return;
+    }
+    
+    // For Story, Task, Bug, or other non-Epic types, transition to Shipped
+    const targetState = "Shipped";
     info(`Attempting to transition JIRA ticket ${ticketKey} to ${targetState}`);
     await transitionTicket(ticketKey, targetState);
     info(`Successfully updated JIRA ticket ${ticketKey} to ${targetState}`);
@@ -430,7 +489,7 @@ function calculateRelevanceScore(epicText: string, ticketText: string): number {
   return matchCount / Math.max(epicWords.size, ticketWords.length);
 }
 
-async function associateTicketWithEpic(ticketKey: string, epicKey: string): Promise<void> {
+export async function associateTicketWithEpic(ticketKey: string, epicKey: string): Promise<void> {
   try {
     const response = await fetch(`${config.jiraHost}/rest/api/2/issue/${ticketKey}`, {
       method: 'PUT',
@@ -455,7 +514,7 @@ async function associateTicketWithEpic(ticketKey: string, epicKey: string): Prom
   }
 }
 
-async function isEpic(ticketKey: string): Promise<boolean> {
+export async function isEpic(ticketKey: string): Promise<boolean> {
   try {
     const ticket = await getJiraTicket(ticketKey);
     return ticket?.fields?.issuetype?.name === 'Epic';
