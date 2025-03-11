@@ -93,6 +93,7 @@ Make sure each affected file is summarized and it's part of the returned JSON.
     type: z
       .array(
         z.enum([
+          "FEATURE",
           "BUG",
           "TESTS",
           "ENHANCEMENT",
