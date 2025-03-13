@@ -42,6 +42,7 @@ const GITHUB_TO_JIRA_MAP: Record<string, string> = {
   "Paradxil": "hunter.stratton@ouradvocates.com",
   "rhymeswithlion": "brian.cruz@ouradvocates.com",
   "taharbenoudjit": "tahar.benoudjit@ouradvocates.com",
+  "davidhudman": "david.hudman@ouradvocates.com",
 };
 
 export async function findTicketFromBranch(branchName: string): Promise<string | null> {
