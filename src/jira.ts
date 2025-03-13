@@ -14,6 +14,10 @@ interface JiraTicket {
       accountId?: string;
       name?: string;
     };
+    status?: {
+      name: string;
+      id?: string;
+    };
   };
 }
 
@@ -325,6 +329,16 @@ export async function getTicketType(ticketKey: string): Promise<string | null> {
   }
 }
 
+async function isTicketInState(ticketKey: string, stateName: string): Promise<boolean> {
+  try {
+    const ticket = await getJiraTicket(ticketKey);
+    return ticket?.fields?.status?.name?.toLowerCase() === stateName.toLowerCase();
+  } catch (error) {
+    warning(`Error checking ticket state for ${ticketKey}: ${error}`);
+    return false;
+  }
+}
+
 export async function updateTicketState(ticketKey: string, prState: "closed" | "merged"): Promise<void> {
   try {
     // Only transition if PR is merged
@@ -335,7 +349,7 @@ export async function updateTicketState(ticketKey: string, prState: "closed" | "
     
     // Check ticket type
     const ticketType = await getTicketType(ticketKey);
-    info(`Ticket ${ticketKey} is of type: ${ticketType}`);
+    info(`Ticket ${ticketKey} is of type: ${ticketType || 'unknown'}`);
     
     // Don't close Epics
     if (ticketType === "Epic") {
@@ -345,7 +359,20 @@ export async function updateTicketState(ticketKey: string, prState: "closed" | "
     
     // For Story, Task, Bug, or other non-Epic types, transition to Shipped
     const targetState = "Shipped";
-    info(`Attempting to transition JIRA ticket ${ticketKey} to ${targetState}`);
+    
+    // Check if the ticket is already in the target state
+    if (await isTicketInState(ticketKey, targetState)) {
+      info(`Ticket ${ticketKey} is already in ${targetState} state`);
+      return;
+    }
+    
+    // Log the specific ticket type being transitioned
+    if (ticketType) {
+      info(`Transitioning ${ticketType} ticket ${ticketKey} to ${targetState}`);
+    } else {
+      info(`Transitioning ticket ${ticketKey} to ${targetState}`);
+    }
+    
     await transitionTicket(ticketKey, targetState);
     info(`Successfully updated JIRA ticket ${ticketKey} to ${targetState}`);
   } catch (error) {

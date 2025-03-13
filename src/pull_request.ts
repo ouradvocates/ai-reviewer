@@ -60,21 +60,39 @@ export async function handlePullRequest() {
   if (context.payload.action === "closed") {
     // First check for tickets in PR description
     const ticketsFromDescription: string[] = [];
-    const ticketMatches = [...(pull_request.body || "").matchAll(/\[([A-Z]+-\d+)\]/g)];
     
-    if (ticketMatches.length > 0) {
-      for (const match of ticketMatches) {
+    // Look for tickets in markdown links format: [ABC-123]
+    const ticketLinkMatches = [...(pull_request.body || "").matchAll(/\[([A-Z]+-\d+)\]/g)];
+
+    // Also look for tickets in plain text format: ABC-123
+    const ticketPlainMatches = [...(pull_request.body || "").matchAll(/\b([A-Z]+-\d+)\b/g)];
+
+    // Combine all matches
+    const allDescriptionMatches = [...ticketLinkMatches, ...ticketPlainMatches];
+
+    if (allDescriptionMatches.length > 0) {
+      for (const match of allDescriptionMatches) {
         ticketsFromDescription.push(match[1]);
       }
-      info(`Found ticket keys in PR description: ${ticketsFromDescription.join(', ')}`);
+      info(`Found ticket keys in PR description: ${[...new Set(ticketsFromDescription)].join(', ')}`);
     }
     
     // Then check for tickets in commit messages
     const ticketsFromCommits = await findTicketsInCommitMessages(commitMessages);
     info(`Found ticket keys in commit messages: ${ticketsFromCommits.join(', ')}`);
     
-    // Combine all found tickets
-    const allTickets = [...new Set([...ticketsFromDescription, ...ticketsFromCommits])];
+    // Also check branch name for tickets
+    let ticketsFromBranch: string[] = [];
+    if (pull_request.head.ref) {
+      const branchTicket = await findTicketFromBranch(pull_request.head.ref);
+      if (branchTicket) {
+        ticketsFromBranch.push(branchTicket);
+        info(`Found ticket key in branch name: ${branchTicket}`);
+      }
+    }
+
+    // Combine all found tickets and remove duplicates
+    const allTickets = [...new Set([...ticketsFromDescription, ...ticketsFromCommits, ...ticketsFromBranch])];
     
     if (allTickets.length > 0) {
       info(`Processing ${allTickets.length} JIRA tickets: ${allTickets.join(', ')}`);
@@ -84,7 +102,7 @@ export async function handlePullRequest() {
         await updateTicketState(ticketKey, pull_request.merged ? "merged" : "closed");
       }
     } else {
-      warning('No JIRA ticket keys found in PR description or commit messages');
+      warning('No JIRA ticket keys found in PR description, commit messages, or branch name');
     }
     
     return;
