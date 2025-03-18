@@ -175,14 +175,14 @@ export async function handlePullRequest() {
       }
 
       const newTicket = await createJiraTicket(
-        summary.title, 
+        summary.title,
         summary.description,
         pull_request.user.login, // Pass the GitHub username of the PR opener
         {
           prUrl: pull_request.html_url,
           prNumber: pull_request.number,
           branchName: pull_request.head.ref,
-          files: files.map(f => ({ 
+          files: files.map(f => ({
             filename: f.filename,
             status: f.status
           })),
@@ -190,7 +190,7 @@ export async function handlePullRequest() {
           userEmail // Pass the GitHub user's email
         }
       );
-      
+
       if (newTicket) {
         jiraTickets.push(newTicket);
         primaryTicket = newTicket;
@@ -208,6 +208,42 @@ export async function handlePullRequest() {
         // If this is an Epic, mark it
         if (ticketType === 'Epic') {
           epicTicket = ticket;
+          // If this is the only ticket and it's an Epic, we should create a new ticket
+          if (jiraTickets.length === 1) {
+            info(`Found only an Epic ticket ${ticket}, creating a new linked ticket`);
+            // Try to get the user's email from the commit
+            let userEmail;
+            if (commits.length > 0 && commits[0].commit.author) {
+              userEmail = commits[0].commit.author.email;
+              info(`Found GitHub user email from commit: ${userEmail}`);
+            }
+
+            const newTicket = await createJiraTicket(
+              summary.title,
+              summary.description,
+              pull_request.user.login,
+              {
+                prUrl: pull_request.html_url,
+                prNumber: pull_request.number,
+                branchName: pull_request.head.ref,
+                files: files.map(f => ({
+                  filename: f.filename,
+                  status: f.status
+                })),
+                commitMessages: commitMessages,
+                userEmail
+              }
+            );
+
+            if (newTicket) {
+              jiraTickets.push(newTicket);
+              primaryTicket = newTicket;
+              ticketTypes[newTicket] = 'Task'; // Add type for the new ticket
+              // Link the new ticket to the Epic
+              await associateTicketWithEpic(newTicket, epicTicket);
+              info(`Created and linked new ticket ${newTicket} to Epic ${epicTicket}`);
+            }
+          }
         }
       }
     }
