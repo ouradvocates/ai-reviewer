@@ -153,6 +153,8 @@ VERY IMPORTANT: Keep all comments as brief as possible. Use short, direct senten
     
 The review should focus on new code added in the PR code diff (lines starting with '+') and be actionable.
 
+IMPORTANT: Your response must be a valid JSON object with a "review" object and a "comments" array. Do not stringify the comments array - it should be a proper JSON array, not a string.
+
 The PR diff will have the following structure:
 ======
 ## File: 'src/file1.py'
@@ -203,25 +205,32 @@ ${config.styleGuideRules}`
 <EXAMPLE>
 {
     "review": {
-    ...
-    }
+        "estimated_effort_to_review": 2,
+        "score": 85,
+        "has_relevant_tests": false,
+        "security_concerns": "No"
+    },
     "comments": [
-    {
-        content: "There's a typo in "upgorading" which should be "upgrading".",
-        header: "Fix typo in error message.",
-        label: "typo",
-        critical: false,
-        highlighted_code: "      No active plan. Enable code reviews by upgorading to a Pro plan",
-        ...
-    },
-    {
-        content: "Variable 'user_id' is used before it's defined. Consider moving the function call to the end of the file.",
-        header: "Potential runtime error in the code.",
-        label: "bug",
-        critical: true,
-        ...
-    },
-    ...
+        {
+            "file": "src/example.ts",
+            "start_line": 12,
+            "end_line": 12,
+            "content": "There's a typo in 'upgorading' which should be 'upgrading'.",
+            "header": "Fix typo in error message",
+            "label": "typo",
+            "critical": false,
+            "highlighted_code": "No active plan. Enable code reviews by upgorading to a Pro plan"
+        },
+        {
+            "file": "src/example.ts",
+            "start_line": 15,
+            "end_line": 15,
+            "content": "Variable 'user_id' is used before it's defined. Consider moving the function call to the end of the file.",
+            "header": "Potential runtime error in the code",
+            "label": "bug",
+            "critical": true,
+            "highlighted_code": "console.log(user_id);"
+        }
     ]
 }
 </EXAMPLE>
