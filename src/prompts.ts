@@ -93,14 +93,13 @@ Make sure each affected file is summarized and it's part of the returned JSON.
     type: z
       .array(
         z.enum([
-          "FEATURE",
-          "BUG",
-          "TESTS",
-          "ENHANCEMENT",
-          "DOCUMENTATION",
-          "SECURITY",
-          "REFACTOR",
-          "OTHER",
+          "Feature",
+          "Bug Fix",
+          "Tests",
+          "Optimization",
+          "Documentation Update",
+          "System Update",
+          "Refactor",
         ])
       )
       .describe("One or more types that describe this PR's main theme."),
