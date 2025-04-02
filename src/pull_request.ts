@@ -452,6 +452,12 @@ export async function handlePullRequest() {
 
   // ======= START REVIEW =======
 
+  // Skip review for draft PRs
+  if (pull_request?.draft) {
+    info("Skipping review for draft pull request");
+    return;
+  }
+
   const review = await runReviewPrompt({
     files: filesToReview,
     prTitle: pull_request.title,
