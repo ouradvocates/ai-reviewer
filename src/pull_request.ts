@@ -482,6 +482,18 @@ export async function handlePullRequest() {
     filesToReview
   );
   info(`posted review comments`);
+
+  // Add the 'ai-reviewed' label after submitting the review
+  try {
+    await octokit.rest.issues.addLabels({
+      ...context.repo,
+      issue_number: pull_request.number,
+      labels: ["ai-reviewed"],
+    });
+    info(`Successfully added label 'ai-reviewed' to PR #${pull_request.number}`);
+  } catch (labelError) {
+    warning(`Failed to add label 'ai-reviewed' to PR #${pull_request.number}: ${labelError}`);
+  }
 }
 
 async function submitReview(
