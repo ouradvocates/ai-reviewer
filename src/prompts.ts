@@ -92,15 +92,7 @@ Make sure each affected file is summarized and it's part of the returned JSON.
       ),
     type: z
       .array(
-        z.enum([
-          "Feature",
-          "Bug Fix",
-          "Tests",
-          "Optimization",
-          "Documentation Update",
-          "System Update",
-          "Refactor",
-        ])
+        z.string()
       )
       .describe("One or more types that describe this PR's main theme."),
   });
