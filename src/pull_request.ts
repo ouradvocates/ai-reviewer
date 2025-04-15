@@ -311,6 +311,64 @@ export async function handlePullRequest() {
     if (jiraTickets.length > 0) {
       info(`Linked JIRA tickets: ${jiraTickets.join(', ')}`);
     }
+
+    // --- START: Auto-labeling logic ---
+
+    let labelsToAdd: string[] = [];
+    const prContent = `${summary.title.toLowerCase()} ${summary.description.toLowerCase()}`;
+
+    // Keyword-based labels
+    if (prContent.includes('fix') || prContent.includes('bug')) {
+      labelsToAdd.push('bug');
+    }
+    if (prContent.includes('feat') || prContent.includes('feature')) {
+      labelsToAdd.push('enhancement');
+    }
+    if (prContent.includes('docs') || prContent.includes('documentation')) {
+      labelsToAdd.push('documentation');
+    }
+    if (prContent.includes('refactor')) {
+      labelsToAdd.push('refactor');
+    }
+    if (prContent.includes('test')) {
+      labelsToAdd.push('test');
+    }
+
+    // File path-based labels
+    const changedFiles = files.map(f => f.filename);
+    if (changedFiles.some(f => f.startsWith('src/ui/'))) {
+      labelsToAdd.push('frontend');
+    }
+    if (changedFiles.some(f => f.startsWith('src/api/') || f.startsWith('src/server/'))) {
+      labelsToAdd.push('backend');
+    }
+    if (changedFiles.some(f => f.startsWith('docs/'))) {
+      labelsToAdd.push('documentation');
+    }
+    if (changedFiles.some(f => f.startsWith('test/') || f.endsWith('.test.ts') || f.endsWith('.spec.ts'))) {
+      labelsToAdd.push('test');
+    }
+
+    // Remove duplicates
+    labelsToAdd = [...new Set(labelsToAdd)];
+
+    if (labelsToAdd.length > 0) {
+      info(`Adding labels: ${labelsToAdd.join(', ')}`);
+      try {
+        await octokit.rest.issues.addLabels({
+          ...context.repo,
+          issue_number: pull_request.number,
+          labels: labelsToAdd,
+        });
+        info('Successfully added labels.');
+      } catch (error) {
+        warning(`Failed to add labels: ${error}`);
+      }
+    } else {
+      info('No applicable labels found based on rules.');
+    }
+
+    // --- END: Auto-labeling logic ---
   }
 
   // Continue with the rest of the function for review generation
