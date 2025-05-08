@@ -14,3 +14,39 @@ inputs:
     required: false
     description: 'Custom style guide rules that will be enforced during review by generating critical comments'
     default: ''
+  jira-host:
+    required: false
+    description: 'The hostname of your JIRA instance (e.g., your-company.atlassian.net).'
+    default: ''
+  jira-username:
+    required: false
+    description: 'The username (usually email) for JIRA API authentication.'
+    default: ''
+  jira-api-token:
+    required: false
+    description: 'The API token for JIRA authentication.'
+    default: ''
+  jira-projects:
+    required: false
+    description: 'Comma-separated list of JIRA project keys that the action can interact with.'
+    default: ''
+  jira-default-project:
+    required: false
+    description: 'The default JIRA project key to use if a ticket needs to be created and no project can be inferred.'
+    default: ''
+  disable-description-overwrite-repos:
+    required: false
+    description: 'Comma-separated list of repository names (e.g., owner/repo,repo-name) to disable PR description overwriting.'
+    default: ''
+  disable-description-overwrite-users:
+    required: false
+    description: 'Comma-separated list of GitHub usernames to disable PR description overwriting for.'
+    default: ''
+  disable_description_overwrite_repos:
+    required: false
+    description: 'Multiline list of repository names (e.g., owner/repo or repo-name per line) to disable PR description overwriting.'
+    default: ''
+  disable_description_overwrite_users:
+    required: false
+    description: 'Multiline list of GitHub usernames to disable PR description overwriting for.'
+    default: ''
