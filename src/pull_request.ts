@@ -298,18 +298,32 @@ export async function handlePullRequest() {
       ? `${ticketReferences}\n${filledTemplate}`
       : filledTemplate;
 
-    // Update PR title and description
-    await octokit.rest.pulls.update({
-      ...context.repo,
-      pull_number: pull_request.number,
-      title: summary.title,
-      body: description,
-    });
+    // Check if description overwrite is disabled
+    const repoName = context.repo.repo.toLowerCase();
+    const repoFullName = `${context.repo.owner.toLowerCase()}/${repoName}`;
+    const prUser = pull_request.user.login.toLowerCase();
 
-    info(`Updated PR title to: "${summary.title}"`);
-    info("Updated PR description with filled template");
-    if (jiraTickets.length > 0) {
-      info(`Linked JIRA tickets: ${jiraTickets.join(', ')}`);
+    const shouldSkipDescriptionUpdate =
+      config.disableDescriptionOverwriteRepos.includes(repoName) ||
+      config.disableDescriptionOverwriteRepos.includes(repoFullName) ||
+      config.disableDescriptionOverwriteUsers.includes(prUser);
+
+    if (!shouldSkipDescriptionUpdate) {
+      // Update PR title and description
+      await octokit.rest.pulls.update({
+        ...context.repo,
+        pull_number: pull_request.number,
+        title: summary.title,
+        body: description,
+      });
+
+      info(`Updated PR title to: "${summary.title}"`);
+      info("Updated PR description with filled template");
+      if (jiraTickets.length > 0) {
+        info(`Linked JIRA tickets: ${jiraTickets.join(', ')}`);
+      }
+    } else {
+      info("Skipping PR title and description update based on configuration.");
     }
 
     // --- START: Auto-labeling logic ---

@@ -10,6 +10,8 @@ export class Config {
   public jiraProjects: string[];
   public jiraDefaultProject: string;
   public styleGuideRules?: string;
+  public disableDescriptionOverwriteRepos: string[];
+  public disableDescriptionOverwriteUsers: string[];
 
   constructor() {
     // Required GitHub token
@@ -36,6 +38,10 @@ export class Config {
     this.jiraProjects = (getInput("jira-projects") || process.env.JIRA_PROJECTS || "").split(",").map(p => p.trim());
     this.jiraDefaultProject = getInput("jira-default-project") || process.env.JIRA_DEFAULT_PROJECT || "";
 
+    // Optional: Disable description overwrite for specific repos or users
+    this.disableDescriptionOverwriteRepos = (getInput("disable-description-overwrite-repos") || process.env.DISABLE_DESCRIPTION_OVERWRITE_REPOS || "").split(",").map(r => r.trim().toLowerCase()).filter(r => r.length > 0);
+    this.disableDescriptionOverwriteUsers = (getInput("disable-description-overwrite-users") || process.env.DISABLE_DESCRIPTION_OVERWRITE_USERS || "").split(",").map(u => u.trim().toLowerCase()).filter(u => u.length > 0);
+
     // Optional style guide rules
     if (!process.env.DEBUG) {
       this.loadInputs();
@@ -55,6 +61,17 @@ export class Config {
     const styleGuideRules = getMultilineInput('style_guide_rules');
     if (styleGuideRules.length && styleGuideRules[0].trim().length) {
       this.styleGuideRules = styleGuideRules.join("\n");
+    }
+
+    // Load additional inputs for description overwrite disable lists
+    const disableReposInput = getMultilineInput('disable_description_overwrite_repos');
+    if (disableReposInput.length && disableReposInput[0].trim().length) {
+      this.disableDescriptionOverwriteRepos = [...new Set([...this.disableDescriptionOverwriteRepos, ...disableReposInput.flatMap(line => line.split(',')).map(r => r.trim().toLowerCase()).filter(r => r.length > 0)])];
+    }
+
+    const disableUsersInput = getMultilineInput('disable_description_overwrite_users');
+    if (disableUsersInput.length && disableUsersInput[0].trim().length) {
+      this.disableDescriptionOverwriteUsers = [...new Set([...this.disableDescriptionOverwriteUsers, ...disableUsersInput.flatMap(line => line.split(',')).map(u => u.trim().toLowerCase()).filter(u => u.length > 0)])];
     }
   }
 }
