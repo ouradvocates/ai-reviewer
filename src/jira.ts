@@ -127,6 +127,42 @@ export async function searchRelatedTickets(title: string, description: string): 
   return null;
 }
 
+export async function findRoadIdea(branchName: string, commitMessages: string[]): Promise<string | null> {
+  const roadIdeaPattern = /ROAD-\d+/gi;
+  let potentialIdeas: string[] = [];
+
+  // Search in branch name
+  const branchMatches = branchName.match(roadIdeaPattern);
+  if (branchMatches) {
+    potentialIdeas.push(...branchMatches.map(id => id.toUpperCase()));
+  }
+
+  // Search in commit messages
+  for (const message of commitMessages) {
+    const commitMatches = message.match(roadIdeaPattern);
+    if (commitMatches) {
+      potentialIdeas.push(...commitMatches.map(id => id.toUpperCase()));
+    }
+  }
+
+  // Remove duplicates
+  potentialIdeas = [...new Set(potentialIdeas)];
+
+  for (const ideaKey of potentialIdeas) {
+    try {
+      const ticket = await getJiraTicket(ideaKey);
+      if (ticket && (await isEpic(ideaKey))) { // Assuming ROAD-* ideas are Epics
+        info(`Found valid ROAD-* Idea (Epic): ${ideaKey}`);
+        return ideaKey;
+      }
+    } catch (error) {
+      warning(`Error validating potential ROAD-* Idea ${ideaKey}: ${error}`);
+    }
+  }
+
+  return null;
+}
+
 export async function createJiraTicket(
   title: string, 
   description: string, 
@@ -275,6 +311,15 @@ export async function createJiraTicket(
     const epicKey = await findEpicBySemanticMatch(title, description);
     if (epicKey) {
       await associateTicketWithEpic(ticketKey, epicKey);
+    }
+
+    // Attempt to link to a ROAD-* idea if available
+    if (prContext?.branchName && prContext?.commitMessages) {
+      const roadIdeaKey = await findRoadIdea(prContext.branchName, prContext.commitMessages);
+      if (roadIdeaKey && roadIdeaKey !== epicKey) { // Avoid double-linking if semantic match was already the ROAD idea
+        info(`Found ROAD-* Idea ${roadIdeaKey}, linking to new ticket ${ticketKey}`);
+        await associateTicketWithEpic(ticketKey, roadIdeaKey);
+      }
     }
     
     // Set initial state to "In Review"
