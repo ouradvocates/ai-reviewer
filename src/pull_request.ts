@@ -205,12 +205,13 @@ export async function handlePullRequest() {
       if (ticketType) {
         ticketTypes[ticket] = ticketType;
         
-        // If this is an Epic, mark it
-        if (ticketType === 'Epic') {
-          epicTicket = ticket;
-          // If this is the only ticket and it's an Epic, we should create a new ticket
+        // If this is an Epic or Idea, mark it for potential linking
+        if (ticketType === 'Epic' || ticketType === 'Idea') {
+          epicTicket = ticket; // Store the Epic or Idea key
+          // If this is the only ticket found so far, and it's an Epic or Idea,
+          // we should create a new Task ticket and link it.
           if (jiraTickets.length === 1) {
-            info(`Found only an Epic ticket ${ticket}, creating a new linked ticket`);
+            info(`Found only an ${ticketType} (${ticket}), creating a new linked Task.`);
             // Try to get the user's email from the commit
             let userEmail;
             if (commits.length > 0 && commits[0].commit.author) {
@@ -239,9 +240,9 @@ export async function handlePullRequest() {
               jiraTickets.push(newTicket);
               primaryTicket = newTicket;
               ticketTypes[newTicket] = 'Task'; // Add type for the new ticket
-              // Link the new ticket to the Epic
-              await associateTicketWithEpic(newTicket, epicTicket);
-              info(`Created and linked new ticket ${newTicket} to Epic ${epicTicket}`);
+              // Link the new ticket to the Epic or Idea
+              await associateTicketWithEpic(newTicket, epicTicket); // epicTicket holds the key of the Epic or Idea
+              info(`Created and linked new Task ${newTicket} to ${ticketType} ${epicTicket}.`);
             }
           }
         }

@@ -150,9 +150,9 @@ export async function findRoadIdea(branchName: string, commitMessages: string[])
 
   for (const ideaKey of potentialIdeas) {
     try {
-      const ticket = await getJiraTicket(ideaKey);
-      if (ticket && (await isEpic(ideaKey))) { // Assuming ROAD-* ideas are Epics
-        info(`Found valid ROAD-* Idea (Epic): ${ideaKey}`);
+      const ticketType = await getTicketType(ideaKey);
+      if (ticketType === 'Epic' || ticketType === 'Idea') {
+        info(`Found valid ROAD-* item (${ticketType}): ${ideaKey} from branch/commit.`);
         return ideaKey;
       }
     } catch (error) {
