@@ -34,6 +34,10 @@ inputs:
     required: false
     description: 'The default JIRA project key to use if a ticket needs to be created and no project can be inferred.'
     default: ''
+  auto-transition-tickets-to-shipped:
+    required: false
+    description: 'Whether to automatically transition JIRA tickets to "Shipped" status when PR is merged. Set to "false" to disable.'
+    default: 'true'
   disable-description-overwrite-repos:
     required: false
     description: 'Comma-separated list of repository names (e.g., owner/repo,repo-name) to disable PR description overwriting.'

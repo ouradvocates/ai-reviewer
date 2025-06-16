@@ -393,6 +393,12 @@ export async function updateTicketState(ticketKey: string, prState: "closed" | "
       return;
     }
     
+    // Check if auto-transition is enabled
+    if (!config.autoTransitionTicketsToShipped) {
+      info(`Auto-transition to Shipped is disabled, not updating JIRA ticket ${ticketKey}`);
+      return;
+    }
+    
     // Check ticket type
     const ticketType = await getTicketType(ticketKey);
     info(`Ticket ${ticketKey} is of type: ${ticketType || 'unknown'}`);

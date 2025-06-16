@@ -12,6 +12,7 @@ export class Config {
   public styleGuideRules?: string;
   public disableDescriptionOverwriteRepos: string[];
   public disableDescriptionOverwriteUsers: string[];
+  public autoTransitionTicketsToShipped: boolean;
 
   constructor() {
     // Required GitHub token
@@ -37,6 +38,11 @@ export class Config {
     this.jiraApiToken = getInput("jira-api-token") || process.env.JIRA_API_TOKEN || "";
     this.jiraProjects = (getInput("jira-projects") || process.env.JIRA_PROJECTS || "").split(",").map(p => p.trim());
     this.jiraDefaultProject = getInput("jira-default-project") || process.env.JIRA_DEFAULT_PROJECT || "";
+
+    // Auto-transition tickets to "Shipped" when PR is merged (default: enabled)
+    const autoTransitionInput = getInput("auto-transition-tickets-to-shipped") || process.env.AUTO_TRANSITION_TICKETS_TO_SHIPPED;
+    this.autoTransitionTicketsToShipped = autoTransitionInput === undefined || autoTransitionInput === "" || 
+      autoTransitionInput.toLowerCase() === "true" || autoTransitionInput === "1";
 
     // Optional: Disable description overwrite for specific repos or users
     this.disableDescriptionOverwriteRepos = (getInput("disable-description-overwrite-repos") || process.env.DISABLE_DESCRIPTION_OVERWRITE_REPOS || "").split(",").map(r => r.trim().toLowerCase()).filter(r => r.length > 0);
