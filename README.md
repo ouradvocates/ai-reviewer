@@ -106,6 +106,30 @@ The action requires:
 - `LLM_API_KEY`: Your API key (added in step 1)
 - `LLM_MODEL`: Which LLM model to use. Make sure the model is [supported](https://github.com/presubmit/ai-reviewer/blob/main/src/ai.ts) and matches the `LLM_API_KEY`.
 
+### Optional Configuration
+
+You can customize the behavior by adding these inputs to your workflow:
+
+```yaml
+- uses: presubmit/ai-reviewer@latest
+  with:
+    enable-diagram-generation: "true" # Enable/disable diagram generation (default: true)
+    diagram-max-files: "10" # Max files to analyze for diagrams (default: 10)
+  env:
+    GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
+    LLM_MODEL: "claude-3-5-sonnet-20241022"
+```
+
+**Diagram Generation**: When enabled, the AI will automatically generate Mermaid diagrams for pull requests that involve:
+
+- API changes and integrations
+- Workflow or process modifications
+- Database schema changes
+- Architecture updates
+- Component relationships
+- State transitions
+
 <br/>
 
 ## Features
@@ -114,6 +138,7 @@ The action requires:
 
 - **In-depth Analysis**: Line-by-line review with context-aware suggestions
 - **Auto PR Summary**: Concise, meaningful summaries of changes
+- **Visual Diagrams**: Automatically generates Mermaid diagrams for workflows, API changes, and architecture modifications
 - **Code Quality**: Catches bugs, anti-patterns, and style issues
 - **Interactive**: Responds to questions and clarifications in comments
 
@@ -132,6 +157,8 @@ The action requires:
 - Disable reviews with `@presubmit ignore` comment
 - Configurable review depth and focus areas
 - Customizable rules and preferences
+- Toggle diagram generation on/off
+- Control maximum files analyzed for diagrams
 
 ### ⚡ Seamless Integration
 
