@@ -13,6 +13,8 @@ export class Config {
   public disableDescriptionOverwriteRepos: string[];
   public disableDescriptionOverwriteUsers: string[];
   public autoTransitionTicketsToShipped: boolean;
+  public enableDiagramGeneration: boolean;
+  public diagramMaxFiles: number;
 
   constructor() {
     // Required GitHub token
@@ -43,6 +45,15 @@ export class Config {
     const autoTransitionInput = getInput("auto-transition-tickets-to-shipped") || process.env.AUTO_TRANSITION_TICKETS_TO_SHIPPED;
     this.autoTransitionTicketsToShipped = autoTransitionInput === undefined || autoTransitionInput === "" || 
       autoTransitionInput.toLowerCase() === "true" || autoTransitionInput === "1";
+
+    // Diagram generation settings (default: enabled)
+    const enableDiagramInput = getInput("enable-diagram-generation") || process.env.ENABLE_DIAGRAM_GENERATION;
+    this.enableDiagramGeneration = enableDiagramInput === undefined || enableDiagramInput === "" || 
+      enableDiagramInput.toLowerCase() === "true" || enableDiagramInput === "1";
+
+    // Maximum number of files to analyze for diagrams (default: 10)
+    const diagramMaxFilesInput = getInput("diagram-max-files") || process.env.DIAGRAM_MAX_FILES;
+    this.diagramMaxFiles = diagramMaxFilesInput ? parseInt(diagramMaxFilesInput, 10) : 10;
 
     // Optional: Disable description overwrite for specific repos or users
     this.disableDescriptionOverwriteRepos = (getInput("disable-description-overwrite-repos") || process.env.DISABLE_DESCRIPTION_OVERWRITE_REPOS || "").split(",").map(r => r.trim().toLowerCase()).filter(r => r.length > 0);

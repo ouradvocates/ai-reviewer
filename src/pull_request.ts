@@ -266,7 +266,7 @@ export async function handlePullRequest() {
       prDescription: pull_request.body || "",
       commitMessages: commitMessages,
       files: files,
-    });
+    }, summary);
 
     // Build ticket references for PR description
     let ticketReferences = '';

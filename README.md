@@ -19,6 +19,7 @@ Optimize your code review process with Presubmit's AI Code Reviewer that catches
 - 🔍 **Instant, In-depth PR Analysis**: Catches bugs, security issues, and optimization opportunities in real-time
 - 🎯 **Focus on What Matters**: Let AI handle the basics while humans focus on architecture and complex logic
 - ✨ **Title and description generation**: Save time by having the AI generate meaningful title and description for your PR
+- 📊 **Visual Diagrams**: Automatically generates Mermaid diagrams to visualize workflows, architecture changes, and data flows
 - 💬 **Interactive & Smart**: Responds to questions and generates code suggestions right in your PR
 - ⚡ **Lightning-Fast Setup**: Up and running in 2 minutes with GitHub Actions
 

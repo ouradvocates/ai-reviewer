@@ -3,6 +3,7 @@ import { z } from "zod";
 import { formatFileDiff, File, FileDiff, generateFileCodeDiff } from "./diff";
 import { ReviewCommentThread } from "./comments";
 import config from "./config";
+import { generateDiagram, formatDiagramForMarkdown, analyzeForDiagramOpportunities } from "./diagrams";
 
 type PullRequestSummaryPrompt = {
   prTitle: string;
@@ -405,7 +406,8 @@ ${generateFileCodeDiff(commentFileDiff)}
 }
 
 export async function fillPRTemplate(
-  pr: PullRequestSummaryPrompt
+  pr: PullRequestSummaryPrompt,
+  summary?: PullRequestSummary
 ): Promise<string> {
   let systemPrompt = `You are a helpful assistant that fills in GitHub Pull Request templates.
 Your task is to analyze the PR's changes and fill in the template sections with relevant information.
@@ -464,5 +466,46 @@ Start with a Summary section that provides a high-level overview, then fill in t
     schema,
   });
 
-  return response.filledTemplate;
+  let filledTemplate = response.filledTemplate;
+
+  // Generate diagram if enabled and summary is provided
+  if (config.enableDiagramGeneration && summary) {
+    try {
+      const opportunities = analyzeForDiagramOpportunities(summary, pr.files);
+      
+      // Only attempt diagram generation if there are relevant changes
+      if (opportunities.hasApiChanges || opportunities.hasWorkflowChanges || 
+          opportunities.hasSchemaChanges || opportunities.hasArchitecturalChanges || 
+          opportunities.hasStateChanges) {
+        
+        const diagramResult = await generateDiagram({
+          summary,
+          files: pr.files.slice(0, config.diagramMaxFiles),
+          commitMessages: pr.commitMessages
+        });
+
+        if (diagramResult.shouldGenerate) {
+          const diagramMarkdown = formatDiagramForMarkdown(diagramResult);
+          if (diagramMarkdown) {
+            // Insert diagram after the summary section
+            const summaryIndex = filledTemplate.indexOf('## Summary');
+            if (summaryIndex !== -1) {
+              // Find the end of the summary section
+              const nextSectionIndex = filledTemplate.indexOf('\n## ', summaryIndex + 10);
+              const insertIndex = nextSectionIndex !== -1 ? nextSectionIndex : filledTemplate.length;
+              filledTemplate = filledTemplate.slice(0, insertIndex) + '\n' + diagramMarkdown + filledTemplate.slice(insertIndex);
+            } else {
+              // If no summary section, prepend the diagram
+              filledTemplate = diagramMarkdown + filledTemplate;
+            }
+          }
+        }
+      }
+    } catch (error) {
+      console.warn('Failed to generate diagram:', error);
+      // Continue without diagram - don't fail the entire process
+    }
+  }
+
+  return filledTemplate;
 }

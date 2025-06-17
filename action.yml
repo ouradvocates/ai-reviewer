@@ -54,3 +54,11 @@ inputs:
     required: false
     description: 'Multiline list of GitHub usernames to disable PR description overwriting for.'
     default: ''
+  enable-diagram-generation:
+    required: false
+    description: 'Whether to generate Mermaid diagrams for pull requests when helpful. Set to "false" to disable.'
+    default: 'true'
+  diagram-max-files:
+    required: false
+    description: 'Maximum number of files to analyze for diagram generation. Higher values may increase processing time.'
+    default: '10'
