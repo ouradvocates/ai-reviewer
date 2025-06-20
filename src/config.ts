@@ -43,13 +43,11 @@ export class Config {
 
     // Auto-transition tickets to "Shipped" when PR is merged (default: enabled)
     const autoTransitionInput = getInput("auto-transition-tickets-to-shipped") || process.env.AUTO_TRANSITION_TICKETS_TO_SHIPPED;
-    this.autoTransitionTicketsToShipped = autoTransitionInput === undefined || autoTransitionInput === "" || 
-      autoTransitionInput.toLowerCase() === "true" || autoTransitionInput === "1";
+    this.autoTransitionTicketsToShipped = autoTransitionInput?.toLowerCase() !== "false";
 
     // Diagram generation settings (default: enabled)
     const enableDiagramInput = getInput("enable-diagram-generation") || process.env.ENABLE_DIAGRAM_GENERATION;
-    this.enableDiagramGeneration = enableDiagramInput === undefined || enableDiagramInput === "" || 
-      enableDiagramInput.toLowerCase() === "true" || enableDiagramInput === "1";
+    this.enableDiagramGeneration = enableDiagramInput?.toLowerCase() !== "false";
 
     // Maximum number of files to analyze for diagrams (default: 10)
     const diagramMaxFilesInput = getInput("diagram-max-files") || process.env.DIAGRAM_MAX_FILES;
