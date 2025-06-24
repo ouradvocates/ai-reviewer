@@ -9,6 +9,10 @@ import { z } from "zod";
 const LLM_MODELS = [
   // Anthropic
   {
+    name: "claude-sonnet-4-20250514",
+    createAi: createAnthropic,
+  },
+  {
     name: "claude-3-7-sonnet-20250219",
     createAi: createAnthropic,
   },
