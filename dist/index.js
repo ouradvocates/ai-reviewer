@@ -177,7 +177,7 @@ ${t}`),A}function db(e){let t=e.hunks.map(r=>zde(r)).join(`
 
 ${t}`),console.log(A),A}function Kde(e,t,A){return A.filter(r=>{let s=r.comments[0];return s&&r.file===e.filename&&!s.in_reply_to_id&&s.path===e.filename&&s.body.length&&s.line&&s.line<=t.endLine&&s.line>=t.startLine&&(!s.start_line||s.start_line<=t.endLine&&s.start_line>=t.startLine)})}async function F2(e){let t=`You are an expert at creating technical diagrams that help visualize code changes in pull requests.
 
-Your task is to analyze PR changes and determine if a Mermaid diagram would be helpful to understand:
+Your task is to analyze PR changes and determine if a diagram would be helpful to understand:
 - New features or workflows
 - Architectural changes
 - Data flow modifications  
@@ -204,7 +204,36 @@ Diagram Types Available:
 - architecture: For system architecture changes
 - none: When no diagram would be helpful
 
-IMPORTANT: Generate valid Mermaid syntax only. Test your syntax mentally before outputting.`,A=`Analyze this PR and determine if a diagram would be helpful:
+Diagram Generation Guidelines:
+- When asked to create a diagram, first determine which format is most suitable:
+  - Mermaid for flowcharts and simple diagrams
+  - PlantUML for UML and architecture diagrams
+  - GraphViz for graphs/trees/networks
+  - D2 for modern system architectures
+- Then create and embed the diagram using markdown code blocks with the appropriate language identifier:
+  - \`\`\`mermaid
+
+<diagram>
+
+\`\`\`
+  - \`\`\`plantuml
+
+<diagram>
+
+\`\`\`
+  - \`\`\`dot
+
+<diagram>
+
+\`\`\`
+  - \`\`\`d2
+
+<diagram>
+
+\`\`\`
+
+
+IMPORTANT: Generate valid diagram syntax only. Test your syntax mentally before outputting.`,A=`Analyze this PR and determine if a diagram would be helpful:
 
 <PR Summary>
 Title: ${e.summary.title}

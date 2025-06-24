@@ -32,7 +32,7 @@ export async function generateDiagram(
 ): Promise<DiagramGenerationResult> {
   const systemPrompt = `You are an expert at creating technical diagrams that help visualize code changes in pull requests.
 
-Your task is to analyze PR changes and determine if a Mermaid diagram would be helpful to understand:
+Your task is to analyze PR changes and determine if a diagram would be helpful to understand:
 - New features or workflows
 - Architectural changes
 - Data flow modifications  
@@ -59,7 +59,20 @@ Diagram Types Available:
 - architecture: For system architecture changes
 - none: When no diagram would be helpful
 
-IMPORTANT: Generate valid Mermaid syntax only. Test your syntax mentally before outputting.`;
+Diagram Generation Guidelines:
+- When asked to create a diagram, first determine which format is most suitable:
+  - Mermaid for flowcharts and simple diagrams
+  - PlantUML for UML and architecture diagrams
+  - GraphViz for graphs/trees/networks
+  - D2 for modern system architectures
+- Then create and embed the diagram using markdown code blocks with the appropriate language identifier:
+  - \`\`\`mermaid\n\n<diagram>\n\n\`\`\`
+  - \`\`\`plantuml\n\n<diagram>\n\n\`\`\`
+  - \`\`\`dot\n\n<diagram>\n\n\`\`\`
+  - \`\`\`d2\n\n<diagram>\n\n\`\`\`
+
+
+IMPORTANT: Generate valid diagram syntax only. Test your syntax mentally before outputting.`;
 
   const userPrompt = `Analyze this PR and determine if a diagram would be helpful:
 
