@@ -505,10 +505,10 @@ Start with a Summary section that provides a high-level overview, then fill in t
 
 `,o+=MQ,o}function M2(e,t){let A=`### Changes
 
-`;A+=`| File | Summary |
-`,A+=`|:----------|:---------------|
-`;for(let s of e.files){let o=s.filename.replace(/\|/g,"\\|"),n=s.summary.replace(/\|/g,"\\|");A+=`| \`${o}\` | ${n} |
-`}let r={commits:t};return A+=MQ,A+=Cb,A+=JSON.stringify(r),A+=pb,A}function x2(e,t,A,r,s,o){let{owner:n,repo:i}=e.repo,a="";r.length===0?a+=`\u2705 **LGTM!**
+`;for(let s of e.files)A+=`**${s.filename}**
+${s.summary}
+
+`;let r={commits:t};return A+=MQ,A+=Cb,A+=JSON.stringify(r),A+=pb,A}function x2(e,t,A,r,s,o){let{owner:n,repo:i}=e.repo,a="";r.length===0?a+=`\u2705 **LGTM!**
 
 `:a+=`\u{1F6A8} **Pull request needs attention.**
 

@@ -76,16 +76,8 @@ export function buildOverviewMessage(
 ): string {
   let message = `### Changes\n\n`;
 
-  // Create table with proper column alignment and escaping
-  message += `| File | Summary |\n`;
-  message += `|:----------|:---------------|\n`; // Left-align columns
-
   for (const file of summary.files) {
-    // Escape pipes and wrap paths in backticks for better formatting
-    const escapedPath = file.filename.replace(/\|/g, "\\|");
-    const escapedSummary = file.summary.replace(/\|/g, "\\|");
-
-    message += `| \`${escapedPath}\` | ${escapedSummary} |\n`;
+    message += `**${file.filename}**\n${file.summary}\n\n`;
   }
 
   const payload = {
