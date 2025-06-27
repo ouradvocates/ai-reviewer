@@ -76,8 +76,38 @@ export function buildOverviewMessage(
 ): string {
   let message = `### Changes\n\n`;
 
-  for (const file of summary.files) {
-    message += `**${file.filename}**\n${file.summary}\n\n`;
+  // Group files by directory structure and prioritize important changes
+  const fileGroups = groupFilesByDirectory(summary.files);
+  const sortedGroups = sortGroupsByImportance(fileGroups);
+
+  for (const [directory, files] of sortedGroups) {
+    // Add directory header if there are multiple directories or it's not root
+    if (sortedGroups.length > 1 || directory !== ".") {
+      const dirIcon = getDirectoryIcon(directory);
+      message += `#### ${dirIcon} ${directory === "." ? "Root" : directory}\n\n`;
+    }
+
+    // Sort files within directory by importance
+    const sortedFiles = sortFilesByImportance(files);
+
+    for (const file of sortedFiles) {
+      const fileIcon = getFileIcon(file.filename);
+      const fileName = getFileDisplayName(file.filename, directory);
+      
+      // Use title as a prominent heading if it's informative
+      if (file.title && file.title.toLowerCase() !== "file changes" && file.title.toLowerCase() !== "changes") {
+        message += `**${fileIcon} ${fileName}** — *${file.title}*\n`;
+      } else {
+        message += `**${fileIcon} ${fileName}**\n`;
+      }
+      
+      message += `${file.summary}\n\n`;
+    }
+
+    // Add spacing between directory groups
+    if (sortedGroups.length > 1) {
+      message += `---\n\n`;
+    }
   }
 
   const payload = {
@@ -90,6 +120,107 @@ export function buildOverviewMessage(
   message += PAYLOAD_TAG_CLOSE;
 
   return message;
+}
+
+// Helper functions for better file organization and display
+function groupFilesByDirectory(files: PullRequestSummary['files']): Map<string, PullRequestSummary['files']> {
+  const groups = new Map<string, PullRequestSummary['files']>();
+  
+  for (const file of files) {
+    const directory = file.filename.includes('/') 
+      ? file.filename.substring(0, file.filename.lastIndexOf('/'))
+      : '.';
+    
+    if (!groups.has(directory)) {
+      groups.set(directory, []);
+    }
+    groups.get(directory)!.push(file);
+  }
+  
+  return groups;
+}
+
+function sortGroupsByImportance(groups: Map<string, PullRequestSummary['files']>): [string, PullRequestSummary['files']][] {
+  const dirPriority = (dir: string): number => {
+    if (dir === '.') return 1; // Root files first
+    if (dir.includes('src') || dir.includes('lib')) return 2; // Source code
+    if (dir.includes('test') || dir.includes('spec')) return 5; // Tests later
+    if (dir.includes('config') || dir.includes('.github')) return 3; // Config
+    if (dir.includes('docs') || dir.includes('doc')) return 6; // Docs last
+    return 4; // Everything else
+  };
+  
+  return Array.from(groups.entries()).sort((a, b) => dirPriority(a[0]) - dirPriority(b[0]));
+}
+
+function sortFilesByImportance(files: PullRequestSummary['files']): PullRequestSummary['files'] {
+  const getFilePriority = (filename: string): number => {
+    const name = filename.toLowerCase();
+    
+    // High priority files
+    if (name.includes('package.json') || name.includes('requirements.txt') || name.includes('yarn.lock')) return 1;
+    if (name.includes('dockerfile') || name.includes('docker-compose')) return 1;
+    if (name.includes('readme') || name.includes('changelog')) return 2;
+    if (name.includes('config') || name.includes('.env') || name.includes('settings')) return 2;
+    
+    // Main source files
+    if (name.includes('index.') || name.includes('main.') || name.includes('app.')) return 3;
+    if (name.endsWith('.ts') || name.endsWith('.js') || name.endsWith('.py') || name.endsWith('.go')) return 4;
+    
+    // Tests
+    if (name.includes('test') || name.includes('spec')) return 6;
+    
+    // Everything else
+    return 5;
+  };
+  
+  return [...files].sort((a, b) => getFilePriority(a.filename) - getFilePriority(b.filename));
+}
+
+function getDirectoryIcon(directory: string): string {
+  const dir = directory.toLowerCase();
+  if (dir === '.' || dir === 'root') return '📁';
+  if (dir.includes('src') || dir.includes('lib')) return '⚙️';
+  if (dir.includes('test') || dir.includes('spec')) return '🧪';
+  if (dir.includes('config') || dir.includes('.github')) return '⚙️';
+  if (dir.includes('docs') || dir.includes('doc')) return '📚';
+  if (dir.includes('assets') || dir.includes('static')) return '🎨';
+  return '📂';
+}
+
+function getFileIcon(filename: string): string {
+  const name = filename.toLowerCase();
+  const ext = filename.split('.').pop()?.toLowerCase();
+  
+  // Special files
+  if (name.includes('package.json')) return '📦';
+  if (name.includes('dockerfile')) return '🐳';
+  if (name.includes('readme')) return '📋';
+  if (name.includes('changelog')) return '📝';
+  if (name.includes('license')) return '⚖️';
+  
+  // By extension
+  switch (ext) {
+    case 'ts': case 'tsx': return '🔷';
+    case 'js': case 'jsx': return '🟨';
+    case 'py': return '🐍';
+    case 'go': return '🔵';
+    case 'rs': return '🦀';
+    case 'java': return '☕';
+    case 'cpp': case 'c': case 'cc': return '🔧';
+    case 'md': return '📝';
+    case 'json': case 'yaml': case 'yml': return '⚙️';
+    case 'css': case 'scss': case 'sass': return '🎨';
+    case 'html': return '🌐';
+    case 'sql': return '🗄️';
+    case 'sh': case 'bash': return '💻';
+    default: return '📄';
+  }
+}
+
+function getFileDisplayName(fullPath: string, directory: string): string {
+  if (directory === '.') return fullPath;
+  return fullPath.replace(directory + '/', '');
 }
 
 export function buildReviewSummary(
