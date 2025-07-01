@@ -71,6 +71,20 @@ Diagram Generation Guidelines:
   - \`\`\`dot\n\n<diagram>\n\n\`\`\`
   - \`\`\`d2\n\n<diagram>\n\n\`\`\`
 
+CRITICAL Mermaid Syntax Rules:
+- NEVER use @ symbols in edge labels or node text (causes parsing errors)
+- Keep edge labels short and simple (use "Injectable" not "@Injectable")
+- Use alphanumeric characters and spaces only in labels
+- Avoid special characters like @, #, $, %, etc. in labels
+- Use underscores or camelCase for node IDs
+- Always test syntax mentally before outputting
+- Examples of CORRECT syntax:
+  - A -->|connects to| B
+  - A -.->|implements| B
+  - A -->|uses| B
+- Examples of INCORRECT syntax:
+  - A -->|@Component| B (@ symbol causes errors)
+  - A -->|#method| B (# symbol causes errors)
 
 IMPORTANT: Generate valid diagram syntax only. Test your syntax mentally before outputting.`;
 
@@ -118,7 +132,55 @@ Should a diagram be generated? If yes, what type and content?`;
     };
   }
 
+  // Validate Mermaid syntax before returning
+  if (result.shouldGenerate && result.diagram) {
+    const validationErrors = validateMermaidSyntax(result.diagram);
+    if (validationErrors.length > 0) {
+      console.warn('Mermaid syntax validation failed:', validationErrors);
+      // Return a safe fallback
+      return {
+        shouldGenerate: false,
+        type: "none"
+      };
+    }
+  }
+
   return result;
+}
+
+// Validate common Mermaid syntax issues
+function validateMermaidSyntax(diagram: string): string[] {
+  const errors: string[] = [];
+  
+  // Check for @ symbols in edge labels
+  if (diagram.match(/-->\s*\|[^|]*@[^|]*\|/)) {
+    errors.push("Found @ symbols in edge labels, which cause parsing errors");
+  }
+  
+  if (diagram.match(/\.->\s*\|[^|]*@[^|]*\|/)) {
+    errors.push("Found @ symbols in dotted edge labels, which cause parsing errors");
+  }
+  
+  // Check for other problematic characters in edge labels
+  const problematicChars = ['#', '$', '%', '^', '&', '*'];
+  for (const char of problematicChars) {
+    if (diagram.includes(`|${char}`) || diagram.includes(`${char}|`)) {
+      errors.push(`Found problematic character '${char}' in edge labels`);
+    }
+  }
+  
+  // Check for overly long edge labels
+  const edgeLabelMatches = diagram.match(/\|([^|]+)\|/g);
+  if (edgeLabelMatches) {
+    for (const match of edgeLabelMatches) {
+      const label = match.slice(1, -1); // Remove | characters
+      if (label.length > 50) {
+        errors.push(`Edge label too long (${label.length} chars): "${label.substring(0, 30)}..."`);
+      }
+    }
+  }
+  
+  return errors;
 }
 
 export function formatDiagramForMarkdown(result: DiagramGenerationResult): string {
