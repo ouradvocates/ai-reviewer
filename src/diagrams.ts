@@ -72,19 +72,37 @@ Diagram Generation Guidelines:
   - \`\`\`d2\n\n<diagram>\n\n\`\`\`
 
 CRITICAL Mermaid Syntax Rules:
-- NEVER use @ symbols in edge labels or node text (causes parsing errors)
+- NEVER use @ symbols ANYWHERE in diagrams (causes parsing errors)
+- This includes: edge labels, node IDs, node text, file paths, subgraph names
+- Common @ symbol sources to avoid:
+  - File paths: src/@types/index.ts → use src/types/index.ts
+  - NPM scoped packages: @angular/core → use angular-core
+  - Decorators: @Component → use Component
+  - Email addresses: user@domain.com → use user-domain-com
+  - GitHub usernames: @username → use username
 - Keep edge labels short and simple (use "Injectable" not "@Injectable")
-- Use alphanumeric characters and spaces only in labels
-- Avoid special characters like @, #, $, %, etc. in labels
+- Use alphanumeric characters, spaces, hyphens, and underscores only
+- Avoid special characters like @, #, $, %, etc. in ALL diagram elements
 - Use underscores or camelCase for node IDs
 - Always test syntax mentally before outputting
 - Examples of CORRECT syntax:
   - A -->|connects to| B
   - A -.->|implements| B
-  - A -->|uses| B
+  - FileService -->|uses| ConfigModule
+  - angular-core -->|provides| HttpClient
 - Examples of INCORRECT syntax:
   - A -->|@Component| B (@ symbol causes errors)
   - A -->|#method| B (# symbol causes errors)
+  - @types/node -->|exports| TypeDefinitions (@ in node ID causes errors)
+  - FileService -->|uses| @angular/core (@ in node ID causes errors)
+
+CRITICAL Entity-Relationship Diagram Rules:
+- Each entity can only be defined ONCE in the diagram
+- NEVER define the same entity multiple times with different content
+- To show example data, use comments in attribute definitions or create separate example entities
+- Entity attributes must follow the format: datatype attribute_name constraints
+- CORRECT ER syntax: Define entity once with examples in comments
+- INCORRECT ER syntax: Defining the same entity multiple times with different content
 
 IMPORTANT: Generate valid diagram syntax only. Test your syntax mentally before outputting.`;
 
@@ -132,11 +150,17 @@ Should a diagram be generated? If yes, what type and content?`;
     };
   }
 
-  // Validate Mermaid syntax before returning
+  // Validate and sanitize Mermaid syntax before returning
   if (result.shouldGenerate && result.diagram) {
+    // First try to auto-sanitize common @ symbol patterns
+    const originalDiagram = result.diagram;
+    result.diagram = sanitizeMermaidText(result.diagram);
+    
     const validationErrors = validateMermaidSyntax(result.diagram);
     if (validationErrors.length > 0) {
       console.warn('Mermaid syntax validation failed:', validationErrors);
+      console.warn('Original diagram:', originalDiagram);
+      console.warn('Sanitized diagram:', result.diagram);
       // Return a safe fallback
       return {
         shouldGenerate: false,
@@ -152,13 +176,41 @@ Should a diagram be generated? If yes, what type and content?`;
 function validateMermaidSyntax(diagram: string): string[] {
   const errors: string[] = [];
   
-  // Check for @ symbols in edge labels
-  if (diagram.match(/-->\s*\|[^|]*@[^|]*\|/)) {
-    errors.push("Found @ symbols in edge labels, which cause parsing errors");
-  }
-  
-  if (diagram.match(/\.->\s*\|[^|]*@[^|]*\|/)) {
-    errors.push("Found @ symbols in dotted edge labels, which cause parsing errors");
+  // Check for @ symbols anywhere in the diagram (comprehensive check)
+  if (diagram.includes('@')) {
+    const atSymbolContexts: string[] = [];
+    
+    // Check for @ symbols in edge labels
+    if (diagram.match(/-->\s*\|[^|]*@[^|]*\|/) || diagram.match(/\.->\s*\|[^|]*@[^|]*\|/)) {
+      atSymbolContexts.push("edge labels");
+    }
+    
+    // Check for @ symbols in node IDs (start of line or after whitespace)
+    if (diagram.match(/^\s*@\w+/) || diagram.match(/\s@\w+/)) {
+      atSymbolContexts.push("node IDs");
+    }
+    
+    // Check for @ symbols in node text (inside square brackets, quotes, or parentheses)
+    if (diagram.match(/\[[^\]]*@[^\]]*\]/) || diagram.match(/"[^"]*@[^"]*"/) || diagram.match(/\([^)]*@[^)]*\)/)) {
+      atSymbolContexts.push("node text/labels");
+    }
+    
+    // Check for @ symbols in subgraph names
+    if (diagram.match(/subgraph\s+[^{\n]*@[^{\n]*/)) {
+      atSymbolContexts.push("subgraph names");
+    }
+    
+    // Check for @ symbols in file paths or module names
+    if (diagram.match(/@[\w-]+\/\w+/) || diagram.match(/src\/@/) || diagram.match(/node_modules\/@/)) {
+      atSymbolContexts.push("file paths or module names");
+    }
+    
+    if (atSymbolContexts.length > 0) {
+      errors.push(`Found @ symbols in ${atSymbolContexts.join(', ')}, which cause parsing errors. Replace with safe alternatives (e.g., @angular/core → angular-core, @types → types)`);
+    } else {
+      // Generic @ symbol found but context unclear
+      errors.push("Found @ symbols in diagram, which cause parsing errors. Remove or replace with safe alternatives");
+    }
   }
   
   // Check for other problematic characters in edge labels
@@ -180,7 +232,53 @@ function validateMermaidSyntax(diagram: string): string[] {
     }
   }
   
+  // Check for duplicate entity definitions in ER diagrams
+  if (diagram.includes('erDiagram')) {
+    const entityMatches = diagram.match(/\s+(\w+)\s*\{/g);
+    if (entityMatches) {
+      const entityNames: string[] = [];
+      const duplicates = new Set<string>();
+      
+      for (const match of entityMatches) {
+        const entityName = match.trim().replace(/\s*\{$/, '');
+        if (entityNames.includes(entityName)) {
+          duplicates.add(entityName);
+        } else {
+          entityNames.push(entityName);
+        }
+      }
+      
+      if (duplicates.size > 0) {
+        errors.push(`Duplicate entity definitions found: ${Array.from(duplicates).join(', ')}. Each entity can only be defined once in ER diagrams.`);
+      }
+    }
+    
+    // Check for improper attribute definitions in ER diagrams (strings used as attribute names)
+    const stringAttributeMatches = diagram.match(/\s+string\s+"[^"]*"/g);
+    if (stringAttributeMatches && stringAttributeMatches.length > 0) {
+      errors.push("Found string literals used as attribute names in ER diagram. Use proper attribute format: datatype attribute_name constraints");
+    }
+  }
+  
   return errors;
+}
+
+// Helper function to suggest safe alternatives for common @ symbol patterns
+export function sanitizeMermaidText(text: string): string {
+  return text
+    // NPM scoped packages
+    .replace(/@([a-zA-Z0-9-_]+)\/([a-zA-Z0-9-_]+)/g, '$1-$2')
+    // File paths with @types, @angular, etc.
+    .replace(/src\/@([a-zA-Z0-9-_]+)/g, 'src/$1')
+    .replace(/node_modules\/@([a-zA-Z0-9-_]+)/g, 'node_modules/$1')
+    // Decorators
+    .replace(/@([A-Z][a-zA-Z0-9]*)/g, '$1')
+    // Email addresses
+    .replace(/([a-zA-Z0-9._%+-]+)@([a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/g, '$1-at-$2')
+    // GitHub usernames
+    .replace(/@([a-zA-Z0-9-_]+)/g, '$1')
+    // Generic @ symbols
+    .replace(/@/g, 'at');
 }
 
 export function formatDiagramForMarkdown(result: DiagramGenerationResult): string {
