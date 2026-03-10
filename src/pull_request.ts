@@ -18,12 +18,10 @@ import { buildComment, listPullRequestCommentThreads } from "./comments";
 import { 
   findTicketFromBranch, 
   searchRelatedTickets, 
-  createJiraTicket, 
   updateTicketState, 
   findTicketsInCommitMessages, 
   getTicketType, 
-  associateTicketWithEpic, 
-  isEpic 
+  associateTicketWithEpic 
 } from "./jira";
 
 export async function handlePullRequest() {
@@ -165,38 +163,6 @@ export async function handlePullRequest() {
       }
     }
 
-    // If still no tickets, create one
-    if (jiraTickets.length === 0 && config.jiraDefaultProject) {
-      // Try to get the user's email from the commit
-      let userEmail;
-      if (commits.length > 0 && commits[0].commit.author) {
-        userEmail = commits[0].commit.author.email;
-        info(`Found GitHub user email from commit: ${userEmail}`);
-      }
-
-      const newTicket = await createJiraTicket(
-        summary.title,
-        summary.description,
-        pull_request.user.login, // Pass the GitHub username of the PR opener
-        {
-          prUrl: pull_request.html_url,
-          prNumber: pull_request.number,
-          branchName: pull_request.head.ref,
-          files: files.map(f => ({
-            filename: f.filename,
-            status: f.status
-          })),
-          commitMessages: commitMessages,
-          userEmail // Pass the GitHub user's email
-        }
-      );
-
-      if (newTicket) {
-        jiraTickets.push(newTicket);
-        primaryTicket = newTicket;
-      }
-    }
-    
     // Categorize tickets and find Epics
     const ticketTypes: Record<string, string> = {};
     
@@ -208,43 +174,6 @@ export async function handlePullRequest() {
         // If this is an Epic or Idea, mark it for potential linking
         if (ticketType === 'Epic' || ticketType === 'Idea') {
           epicTicket = ticket; // Store the Epic or Idea key
-          // If this is the only ticket found so far, and it's an Epic or Idea,
-          // we should create a new Task ticket and link it.
-          if (jiraTickets.length === 1) {
-            info(`Found only an ${ticketType} (${ticket}), creating a new linked Task.`);
-            // Try to get the user's email from the commit
-            let userEmail;
-            if (commits.length > 0 && commits[0].commit.author) {
-              userEmail = commits[0].commit.author.email;
-              info(`Found GitHub user email from commit: ${userEmail}`);
-            }
-
-            const newTicket = await createJiraTicket(
-              summary.title,
-              summary.description,
-              pull_request.user.login,
-              {
-                prUrl: pull_request.html_url,
-                prNumber: pull_request.number,
-                branchName: pull_request.head.ref,
-                files: files.map(f => ({
-                  filename: f.filename,
-                  status: f.status
-                })),
-                commitMessages: commitMessages,
-                userEmail
-              }
-            );
-
-            if (newTicket) {
-              jiraTickets.push(newTicket);
-              primaryTicket = newTicket;
-              ticketTypes[newTicket] = 'Task'; // Add type for the new ticket
-              // Link the new ticket to the Epic or Idea
-              await associateTicketWithEpic(newTicket, epicTicket); // epicTicket holds the key of the Epic or Idea
-              info(`Created and linked new Task ${newTicket} to ${ticketType} ${epicTicket}.`);
-            }
-          }
         }
       }
     }
