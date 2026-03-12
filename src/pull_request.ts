@@ -56,6 +56,10 @@ export async function handlePullRequest() {
 
   // Handle PR close/merge events
   if (context.payload.action === "closed") {
+    if (!config.jiraHost) {
+      // JIRA not configured; skip ticket state updates
+      return;
+    }
     // First check for tickets in PR description
     const ticketsFromDescription: string[] = [];
     
@@ -126,69 +130,72 @@ export async function handlePullRequest() {
       files: files,
     });
 
-    // Try to find JIRA tickets
+    // Try to find JIRA tickets (only when JIRA is configured)
     let jiraTickets: string[] = [];
     let primaryTicket: string | null = null;
     let epicTicket: string | null = null;
-    
-    // First check branch name
-    if (pull_request.head.ref) {
-      const branchTicket = await findTicketFromBranch(pull_request.head.ref);
-      if (branchTicket) {
-        jiraTickets.push(branchTicket);
-        primaryTicket = branchTicket;
-      }
-    }
-    
-    // Then check commit messages
-    const commitTickets = await findTicketsInCommitMessages(commitMessages);
-    
-    // Add any new tickets found in commits
-    for (const ticket of commitTickets) {
-      if (!jiraTickets.includes(ticket)) {
-        jiraTickets.push(ticket);
-        // If we don't have a primary ticket yet, use the first one from commits
-        if (!primaryTicket) {
-          primaryTicket = ticket;
+    let ticketTypes: Record<string, string> = {};
+
+    if (config.jiraHost) {
+      // First check branch name
+      if (pull_request.head.ref) {
+        const branchTicket = await findTicketFromBranch(pull_request.head.ref);
+        if (branchTicket) {
+          jiraTickets.push(branchTicket);
+          primaryTicket = branchTicket;
         }
       }
-    }
-    
-    // If no tickets found yet, search for related tickets
-    if (jiraTickets.length === 0) {
-      const relatedTicket = await searchRelatedTickets(summary.title, summary.description);
-      if (relatedTicket) {
-        jiraTickets.push(relatedTicket);
-        primaryTicket = relatedTicket;
+      
+      // Then check commit messages
+      const commitTickets = await findTicketsInCommitMessages(commitMessages);
+      
+      // Add any new tickets found in commits
+      for (const ticket of commitTickets) {
+        if (!jiraTickets.includes(ticket)) {
+          jiraTickets.push(ticket);
+          // If we don't have a primary ticket yet, use the first one from commits
+          if (!primaryTicket) {
+            primaryTicket = ticket;
+          }
+        }
+      }
+      
+      // If no tickets found yet, search for related tickets
+      if (jiraTickets.length === 0) {
+        const relatedTicket = await searchRelatedTickets(summary.title, summary.description);
+        if (relatedTicket) {
+          jiraTickets.push(relatedTicket);
+          primaryTicket = relatedTicket;
+        }
+      }
+
+      // Categorize tickets and find Epics
+      ticketTypes = {};
+      
+      for (const ticket of jiraTickets) {
+        const ticketType = await getTicketType(ticket);
+        if (ticketType) {
+          ticketTypes[ticket] = ticketType;
+          
+          // If this is an Epic or Idea, mark it for potential linking
+          if (ticketType === 'Epic' || ticketType === 'Idea') {
+            epicTicket = ticket; // Store the Epic or Idea key
+          }
+        }
+      }
+      
+      // If we found tickets but no Epic, try to find a related Epic
+      if (jiraTickets.length > 0 && !epicTicket && primaryTicket) {
+        // Try to find an Epic to associate with
+        for (const ticket of jiraTickets) {
+          if (ticket !== primaryTicket && ticketTypes[ticket] !== 'Epic') {
+            // Link non-primary, non-Epic tickets to the primary ticket
+            await associateTicketWithEpic(ticket, primaryTicket);
+          }
+        }
       }
     }
 
-    // Categorize tickets and find Epics
-    const ticketTypes: Record<string, string> = {};
-    
-    for (const ticket of jiraTickets) {
-      const ticketType = await getTicketType(ticket);
-      if (ticketType) {
-        ticketTypes[ticket] = ticketType;
-        
-        // If this is an Epic or Idea, mark it for potential linking
-        if (ticketType === 'Epic' || ticketType === 'Idea') {
-          epicTicket = ticket; // Store the Epic or Idea key
-        }
-      }
-    }
-    
-    // If we found tickets but no Epic, try to find a related Epic
-    if (jiraTickets.length > 0 && !epicTicket && primaryTicket) {
-      // Try to find an Epic to associate with
-      for (const ticket of jiraTickets) {
-        if (ticket !== primaryTicket && ticketTypes[ticket] !== 'Epic') {
-          // Link non-primary, non-Epic tickets to the primary ticket
-          await associateTicketWithEpic(ticket, primaryTicket);
-        }
-      }
-    }
-    
     // Fill the PR template using the generated summary
     const filledTemplate = await fillPRTemplate({
       prTitle: summary.title,
