@@ -110,8 +110,13 @@ export async function handlePullRequest() {
     return;
   }
 
-  // Only update description if this is a new PR
-  if (context.payload.action === "opened" || context.payload.action === "reopened") {
+  // Update description on PR open, reopen, new pushes, or when marked ready for review
+  if (
+    context.payload.action === "opened" ||
+    context.payload.action === "reopened" ||
+    context.payload.action === "synchronize" ||
+    context.payload.action === "ready_for_review"
+  ) {
     info(`PR #${pull_request.number} opened, checking description and title...`);
     info(`Current title: "${pull_request.title}"`);
     info(`Current description: ${pull_request.body || '(empty)'}`);
