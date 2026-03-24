@@ -21,7 +21,7 @@ jobs:
             echo "Error: LLM_API_KEY secret is not configured"
             exit 1
           fi
-      - uses: presubmit/ai-reviewer@latest
+      - uses: presubmit/ai-reviewer@5f1290b6142b14b44cd2e8e3ffda84cd0a22e94f # latest
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
