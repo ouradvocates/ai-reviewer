@@ -3,7 +3,7 @@ import { createAnthropic } from "@ai-sdk/anthropic";
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { createOpenAI } from "@ai-sdk/openai";
 import { generateObject } from "ai";
-import { info } from "@actions/core";
+import { info, warning } from "@actions/core";
 import { z } from "zod";
 
 const LLM_MODELS = [
@@ -81,6 +81,36 @@ const LLM_MODELS = [
   },
 ];
 
+/**
+ * Try to unwrap a response that the LLM nested under an extra key.
+ *
+ * Some provider/SDK combinations (notably @ai-sdk/anthropic tool mode) return
+ * the structured object wrapped like `{ "$PARAMETER_NAME": { ...actual } }`.
+ * When the outer object has exactly one key whose value is a plain object that
+ * contains the keys the schema expects, we unwrap and re-validate it.
+ *
+ * Returns the validated object on success, or `null` if unwrapping isn't
+ * applicable or re-validation fails.
+ */
+function tryUnwrapAndValidate(
+  raw: Record<string, unknown>,
+  schema: z.ZodObject<any, any>,
+): Record<string, unknown> | null {
+  const topKeys = Object.keys(raw);
+  if (topKeys.length !== 1) return null;
+
+  const inner = raw[topKeys[0]];
+  if (!inner || typeof inner !== "object" || Array.isArray(inner)) return null;
+
+  const result = schema.safeParse(inner);
+  if (!result.success) return null;
+
+  warning(
+    `LLM response was wrapped under "${topKeys[0]}" — unwrapped automatically`,
+  );
+  return result.data as Record<string, unknown>;
+}
+
 export async function runPrompt({
   prompt,
   systemPrompt,
@@ -96,16 +126,35 @@ export async function runPrompt({
   }
 
   const llm = model.createAi({ apiKey: config.llmApiKey });
-  const { object, usage } = await generateObject({
-    model: llm(model.name),
-    prompt,
-    system: systemPrompt,
-    schema,
-  });
 
-  if (process.env.DEBUG) {
-    info(`usage: \n${JSON.stringify(usage, null, 2)}`);
+  try {
+    const { object, usage } = await generateObject({
+      model: llm(model.name),
+      prompt,
+      system: systemPrompt,
+      schema,
+    });
+
+    if (process.env.DEBUG) {
+      info(`usage: \n${JSON.stringify(usage, null, 2)}`);
+    }
+
+    return object;
+  } catch (err: unknown) {
+    if (
+      err &&
+      typeof err === "object" &&
+      "value" in err &&
+      err.value &&
+      typeof err.value === "object"
+    ) {
+      const unwrapped = tryUnwrapAndValidate(
+        err.value as Record<string, unknown>,
+        schema,
+      );
+      if (unwrapped) return unwrapped;
+    }
+
+    throw err;
   }
-
-  return object;
 }

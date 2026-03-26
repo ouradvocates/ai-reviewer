@@ -318,6 +318,7 @@ ${pr.files.map((file) => generateFileCodeDiff(file)).join("\n\n")}
     review: reviewSchema.describe("The full review of the PR"),
     comments: z
       .array(commentSchema)
+      .default([])
       .describe(
         "Comments about possible bugs, security concerns, code quality, typos or regressions introduced in this PR."
       ),
