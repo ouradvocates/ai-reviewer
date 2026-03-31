@@ -363,12 +363,17 @@ export async function handlePullRequest() {
   if (overviewComment) {
     info(`running incremental review`);
     try {
-      const payload = JSON.parse(
-        overviewComment.body
-          ?.split(PAYLOAD_TAG_OPEN)[1]
-          .split(PAYLOAD_TAG_CLOSE)[0] || "{}"
-      );
-      commitsReviewed = payload.commits;
+      const body = overviewComment.body ?? "";
+      const openIdx = body.indexOf(PAYLOAD_TAG_OPEN);
+      const closeIdx = openIdx !== -1
+        ? body.indexOf(PAYLOAD_TAG_CLOSE, openIdx + PAYLOAD_TAG_OPEN.length)
+        : -1;
+      const payloadStr =
+        openIdx !== -1 && closeIdx !== -1
+          ? body.slice(openIdx + PAYLOAD_TAG_OPEN.length, closeIdx)
+          : "{}";
+      const payload = JSON.parse(payloadStr);
+      commitsReviewed = payload.commits ?? [];
     } catch (error) {
       warning(`error parsing overview payload: ${error}`);
     }
