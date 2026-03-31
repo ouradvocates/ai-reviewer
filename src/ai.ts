@@ -86,8 +86,14 @@ const LLM_MODELS = [
  *
  * Some provider/SDK combinations (notably @ai-sdk/anthropic tool mode) return
  * the structured object wrapped like `{ "$PARAMETER_NAME": { ...actual } }`.
- * When the outer object has exactly one key whose value is a plain object that
- * contains the keys the schema expects, we unwrap and re-validate it.
+ *
+ * Strategy 1 (original): The outer object has exactly one key whose value is a
+ * plain object containing the keys the schema expects — unwrap and re-validate.
+ *
+ * Strategy 2 (partial wrapping): Real schema fields sit at the top level
+ * alongside a `$PARAMETER_NAME` key whose value is an XML-like string
+ * (`<parameter name="field">value</parameter>`). We extract the missing field
+ * from that string and merge it back into the object.
  *
  * Returns the validated object on success, or `null` if unwrapping isn't
  * applicable or re-validation fails.
@@ -97,16 +103,62 @@ function tryUnwrapAndValidate(
   schema: z.ZodObject<any, any>,
 ): Record<string, unknown> | null {
   const topKeys = Object.keys(raw);
-  if (topKeys.length !== 1) return null;
 
-  const inner = raw[topKeys[0]];
-  if (!inner || typeof inner !== "object" || Array.isArray(inner)) return null;
+  // Strategy 1: single wrapper key containing a full nested object
+  if (topKeys.length === 1) {
+    const inner = raw[topKeys[0]];
+    if (inner && typeof inner === "object" && !Array.isArray(inner)) {
+      const result = schema.safeParse(inner);
+      if (result.success) {
+        warning(
+          `LLM response was wrapped under "${topKeys[0]}" — unwrapped automatically`,
+        );
+        return result.data as Record<string, unknown>;
+      }
+    }
+  }
 
-  const result = schema.safeParse(inner);
+  // Strategy 2: $PARAMETER_NAME coexists with real schema fields
+  const wrappedKey = topKeys.find(
+    (k) => k.startsWith("$") && typeof raw[k] === "string",
+  );
+  if (!wrappedKey) return null;
+
+  const schemaKeys = Object.keys(schema.shape);
+  const presentKeys = topKeys.filter((k) => k !== wrappedKey && schemaKeys.includes(k));
+  if (presentKeys.length === 0) return null;
+
+  const missingKeys = schemaKeys.filter(
+    (k) => !(k in raw) || k === wrappedKey,
+  );
+
+  const merged: Record<string, unknown> = {};
+  for (const k of presentKeys) merged[k] = raw[k];
+
+  const xmlStr = raw[wrappedKey] as string;
+
+  for (const key of missingKeys) {
+    const re = new RegExp(
+      `<parameter\\s+name=["']${key}["']>([\\s\\S]*?)</parameter>`,
+    );
+    const match = xmlStr.match(re);
+    if (match) {
+      merged[key] = match[1].trim();
+    }
+  }
+
+  // If we still have exactly one missing required field and couldn't extract
+  // it from XML tags, assign the raw string as a last resort.
+  const stillMissing = schemaKeys.filter((k) => !(k in merged));
+  if (stillMissing.length === 1) {
+    merged[stillMissing[0]] = xmlStr;
+  }
+
+  const result = schema.safeParse(merged);
   if (!result.success) return null;
 
   warning(
-    `LLM response was wrapped under "${topKeys[0]}" — unwrapped automatically`,
+    `LLM response had partial "${wrappedKey}" wrapping — reconstructed automatically`,
   );
   return result.data as Record<string, unknown>;
 }

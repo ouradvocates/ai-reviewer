@@ -85,9 +85,11 @@ Make sure each affected file is summarized and it's part of the returned JSON.
       ),
     description: z
       .string()
+      .default("")
       .describe("Informative description of the PR, describing its main theme"),
     files: z
       .array(fileSchema)
+      .default([])
       .describe(
         "List of files affected in the PR and summaries of their changes"
       ),
@@ -95,6 +97,7 @@ Make sure each affected file is summarized and it's part of the returned JSON.
       .array(
         z.string()
       )
+      .default([])
       .describe("One or more types that describe this PR's main theme."),
   });
 
