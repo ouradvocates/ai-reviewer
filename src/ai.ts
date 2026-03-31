@@ -95,6 +95,10 @@ const LLM_MODELS = [
  * (`<parameter name="field">value</parameter>`). We extract the missing field
  * from that string and merge it back into the object.
  *
+ * Strategy 3 (partial response): The LLM returned some schema fields but
+ * omitted others that have defaults. Re-parse with Zod so defaults fill in
+ * the gaps (e.g. LLM returns `{ comments }` but omits `review`).
+ *
  * Returns the validated object on success, or `null` if unwrapping isn't
  * applicable or re-validation fails.
  */
@@ -122,45 +126,71 @@ function tryUnwrapAndValidate(
   const wrappedKey = topKeys.find(
     (k) => k.startsWith("$") && typeof raw[k] === "string",
   );
-  if (!wrappedKey) return null;
+  if (wrappedKey) {
+    const schemaKeys = Object.keys(schema.shape);
+    const presentKeys = topKeys.filter((k) => k !== wrappedKey && schemaKeys.includes(k));
+    if (presentKeys.length > 0) {
+      const missingKeys = schemaKeys.filter(
+        (k) => !(k in raw) || k === wrappedKey,
+      );
 
-  const schemaKeys = Object.keys(schema.shape);
-  const presentKeys = topKeys.filter((k) => k !== wrappedKey && schemaKeys.includes(k));
-  if (presentKeys.length === 0) return null;
+      const merged: Record<string, unknown> = {};
+      for (const k of presentKeys) merged[k] = raw[k];
 
-  const missingKeys = schemaKeys.filter(
-    (k) => !(k in raw) || k === wrappedKey,
-  );
+      const xmlStr = raw[wrappedKey] as string;
 
-  const merged: Record<string, unknown> = {};
-  for (const k of presentKeys) merged[k] = raw[k];
+      for (const key of missingKeys) {
+        const re = new RegExp(
+          `<parameter\\s+name=["']${key}["']>([\\s\\S]*?)</parameter>`,
+        );
+        const match = xmlStr.match(re);
+        if (match) {
+          merged[key] = match[1].trim();
+        }
+      }
 
-  const xmlStr = raw[wrappedKey] as string;
+      // If we still have exactly one missing required field and couldn't extract
+      // it from XML tags, assign the raw string as a last resort.
+      const stillMissing = schemaKeys.filter((k) => !(k in merged));
+      if (stillMissing.length === 1) {
+        merged[stillMissing[0]] = xmlStr;
+      }
 
-  for (const key of missingKeys) {
-    const re = new RegExp(
-      `<parameter\\s+name=["']${key}["']>([\\s\\S]*?)</parameter>`,
-    );
-    const match = xmlStr.match(re);
-    if (match) {
-      merged[key] = match[1].trim();
+      const result = schema.safeParse(merged);
+      if (result.success) {
+        warning(
+          `LLM response had partial "${wrappedKey}" wrapping — reconstructed automatically`,
+        );
+        return result.data as Record<string, unknown>;
+      }
     }
   }
 
-  // If we still have exactly one missing required field and couldn't extract
-  // it from XML tags, assign the raw string as a last resort.
-  const stillMissing = schemaKeys.filter((k) => !(k in merged));
-  if (stillMissing.length === 1) {
-    merged[stillMissing[0]] = xmlStr;
+  // Strategy 3: partial response — LLM returned some schema keys but not all.
+  // If at least one schema key is present, try to parse with a relaxed schema
+  // where every field is optional (with defaults where defined).
+  const schemaKeys = Object.keys(schema.shape);
+  const matchingKeys = topKeys.filter((k) => schemaKeys.includes(k));
+  if (matchingKeys.length > 0) {
+    const relaxed = schema.partial();
+    const partialResult = relaxed.safeParse(raw);
+    if (partialResult.success) {
+      // Re-validate against the full schema — Zod .default() values will have
+      // been applied by .partial() parse, but truly required fields may still
+      // be missing. Merge parsed partial data back through the full schema
+      // so that defaults on the full schema also apply.
+      const fullResult = schema.safeParse(partialResult.data);
+      if (fullResult.success) {
+        const missingFields = schemaKeys.filter((k) => !topKeys.includes(k));
+        warning(
+          `LLM response was missing field(s) [${missingFields.join(", ")}] — filled with defaults`,
+        );
+        return fullResult.data as Record<string, unknown>;
+      }
+    }
   }
 
-  const result = schema.safeParse(merged);
-  if (!result.success) return null;
-
-  warning(
-    `LLM response had partial "${wrappedKey}" wrapping — reconstructed automatically`,
-  );
-  return result.data as Record<string, unknown>;
+  return null;
 }
 
 export async function runPrompt({

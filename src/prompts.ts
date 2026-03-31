@@ -318,7 +318,14 @@ ${pr.files.map((file) => generateFileCodeDiff(file)).join("\n\n")}
   });
 
   let schema = z.object({
-    review: reviewSchema.describe("The full review of the PR"),
+    review: reviewSchema
+      .default({
+        estimated_effort_to_review: 3,
+        score: 70,
+        has_relevant_tests: false,
+        security_concerns: "No",
+      })
+      .describe("The full review of the PR"),
     comments: z
       .array(commentSchema)
       .default([])
