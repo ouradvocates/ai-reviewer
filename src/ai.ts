@@ -166,12 +166,12 @@ function tryUnwrapAndValidate(
     }
   }
 
-  // Strategy 3: partial response — LLM returned some schema keys but not all.
-  // If at least one schema key is present, try to parse with a relaxed schema
-  // where every field is optional (with defaults where defined).
+  // Strategy 3: partial or empty response — LLM returned some (or no) schema
+  // keys. If at least one schema key is present, or the response is completely
+  // empty, try to parse so that Zod .default() values fill in the gaps.
   const schemaKeys = Object.keys(schema.shape);
   const matchingKeys = topKeys.filter((k) => schemaKeys.includes(k));
-  if (matchingKeys.length > 0) {
+  if (matchingKeys.length > 0 || topKeys.length === 0) {
     const relaxed = schema.partial();
     const partialResult = relaxed.safeParse(raw);
     if (partialResult.success) {

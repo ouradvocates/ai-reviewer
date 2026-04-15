@@ -201,71 +201,68 @@ export async function handlePullRequest() {
       }
     }
 
-    // Fill the PR template using the generated summary
-    const filledTemplate = await fillPRTemplate({
-      prTitle: summary.title,
-      prDescription: pull_request.body || "",
-      commitMessages: commitMessages,
-      files: files,
-    }, summary);
+    try {
+      const filledTemplate = await fillPRTemplate({
+        prTitle: summary.title,
+        prDescription: pull_request.body || "",
+        commitMessages: commitMessages,
+        files: files,
+      }, summary);
 
-    // Build ticket references for PR description
-    let ticketReferences = '';
-    if (jiraTickets.length > 0) {
-      // Group tickets by type
-      const ticketsByType: Record<string, string[]> = {};
-      
-      for (const ticket of jiraTickets) {
-        const type = ticketTypes[ticket] || 'Task';
-        if (!ticketsByType[type]) {
-          ticketsByType[type] = [];
-        }
-        ticketsByType[type].push(ticket);
-      }
-      
-      // Build references section
-      ticketReferences = '## JIRA References\n\n';
-      
-      for (const type in ticketsByType) {
-        ticketReferences += `### ${type}s\n`;
-        for (const ticket of ticketsByType[type]) {
-          ticketReferences += `- [${ticket}](${config.jiraHost}/browse/${ticket})\n`;
-        }
-        ticketReferences += '\n';
-      }
-    }
-
-    // Add JIRA ticket references to description
-    const description = jiraTickets.length > 0
-      ? `${ticketReferences}\n${filledTemplate}`
-      : filledTemplate;
-
-    // Check if description overwrite is disabled
-    const repoName = context.repo.repo.toLowerCase();
-    const repoFullName = `${context.repo.owner.toLowerCase()}/${repoName}`;
-    const prUser = pull_request.user.login.toLowerCase();
-
-    const shouldSkipDescriptionUpdate =
-      config.disableDescriptionOverwriteRepos.includes(repoName) ||
-      config.disableDescriptionOverwriteRepos.includes(repoFullName) ||
-      config.disableDescriptionOverwriteUsers.includes(prUser);
-
-    if (!shouldSkipDescriptionUpdate) {
-      // Update PR title and description
-      await octokit.rest.pulls.update({
-        ...context.repo,
-        pull_number: pull_request.number,
-        title: summary.title,
-        body: description,
-      });
-
-      info(`Updated PR title to: "${summary.title}"`);
-      info("Updated PR description with filled template");
+      let ticketReferences = '';
       if (jiraTickets.length > 0) {
-        info(`Linked JIRA tickets: ${jiraTickets.join(', ')}`);
+        const ticketsByType: Record<string, string[]> = {};
+        
+        for (const ticket of jiraTickets) {
+          const type = ticketTypes[ticket] || 'Task';
+          if (!ticketsByType[type]) {
+            ticketsByType[type] = [];
+          }
+          ticketsByType[type].push(ticket);
+        }
+        
+        ticketReferences = '## JIRA References\n\n';
+        
+        for (const type in ticketsByType) {
+          ticketReferences += `### ${type}s\n`;
+          for (const ticket of ticketsByType[type]) {
+            ticketReferences += `- [${ticket}](${config.jiraHost}/browse/${ticket})\n`;
+          }
+          ticketReferences += '\n';
+        }
       }
-    } else {
-      info("Skipping PR title and description update based on configuration.");
+
+      const description = jiraTickets.length > 0
+        ? `${ticketReferences}\n${filledTemplate}`
+        : filledTemplate;
+
+      const repoName = context.repo.repo.toLowerCase();
+      const repoFullName = `${context.repo.owner.toLowerCase()}/${repoName}`;
+      const prUser = pull_request.user.login.toLowerCase();
+
+      const shouldSkipDescriptionUpdate =
+        config.disableDescriptionOverwriteRepos.includes(repoName) ||
+        config.disableDescriptionOverwriteRepos.includes(repoFullName) ||
+        config.disableDescriptionOverwriteUsers.includes(prUser);
+
+      if (!shouldSkipDescriptionUpdate) {
+        await octokit.rest.pulls.update({
+          ...context.repo,
+          pull_number: pull_request.number,
+          title: summary.title,
+          body: description,
+        });
+
+        info(`Updated PR title to: "${summary.title}"`);
+        info("Updated PR description with filled template");
+        if (jiraTickets.length > 0) {
+          info(`Linked JIRA tickets: ${jiraTickets.join(', ')}`);
+        }
+      } else {
+        info("Skipping PR title and description update based on configuration.");
+      }
+    } catch (templateError) {
+      warning(`Failed to fill PR template, continuing with review: ${templateError}`);
     }
 
     // --- START: Auto-labeling logic ---

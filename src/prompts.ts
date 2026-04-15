@@ -468,7 +468,7 @@ ${pr.files.map((file) => formatFileDiff(file)).join("\n\n")}
 Start with a Summary section that provides a high-level overview, then fill in the rest of the description while maintaining any existing structure. Be specific and detailed.`;
 
   const schema = z.object({
-    filledTemplate: z.string().describe("The filled PR description with all sections completed, preserving any existing structure"),
+    filledTemplate: z.string().default("").describe("The filled PR description with all sections completed, preserving any existing structure"),
   });
 
   const response = await runPrompt({
