@@ -378,6 +378,11 @@ export async function handlePullRequest() {
       warning(`error parsing overview payload: ${error}`);
     }
 
+    if (context.payload.action === "ready_for_review") {
+      info("PR marked ready for review — resetting commit tracking for full review");
+      commitsReviewed = [];
+    }
+
     // Check if there are any incremental changes
     lastCommitReviewed =
       commitsReviewed.length > 0
