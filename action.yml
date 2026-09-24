@@ -1,9 +1,10 @@
-name: "AI Code Reviewer for Pull Requests"
-description: "Review, summarize and auto-fix pull requests with AI"
+name: "Presubmit - AI Code Review & Fixes"
+description: "AI-powered code reviews that detect issues, provide summaries, and suggest auto-fixes on PRs."
 author: "Presubmit.ai"
 branding:
   icon: "check-square"
   color: "black"
+  tags: "ai,code-review,ai-assisted,automation,pull-requests,linting,ci,autofix,devtools"
 
 runs:
   using: "node20"
@@ -62,3 +63,12 @@ inputs:
     required: false
     description: 'Maximum number of files to analyze for diagram generation. Higher values may increase processing time.'
     default: '10'
+
+  github_api_url:
+    required: false
+    description: 'GitHub API URL for GitHub Enterprise Server (e.g., https://github.example.com/api/v3)'
+    default: 'https://api.github.com'
+  github_server_url:
+    required: false
+    description: 'GitHub Server URL for GitHub Enterprise Server (e.g., https://github.example.com)'
+    default: 'https://github.com'

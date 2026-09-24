@@ -36,7 +36,7 @@ export async function handlePullRequestComment() {
     return;
   }
 
-  const octokit = initOctokit(config.githubToken);
+  const octokit = initOctokit(config.githubToken, config.githubApiUrl);
 
   // Fetch comment thread
   const commentThread = await getCommentThread(octokit, {
@@ -96,7 +96,7 @@ export async function handlePullRequestComment() {
   }
 
   info("action requested, submitting response");
-  await octokit.pulls.createReviewComment({
+  await octokit.rest.pulls.createReviewComment({
     ...context.repo,
     pull_number: pull_request.number,
     commit_id: pull_request.head.sha,

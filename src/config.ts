@@ -1,4 +1,5 @@
 import { getInput, getMultilineInput } from "@actions/core";
+import { AIProviderType } from "./ai";
 
 export class Config {
   public githubToken: string;
@@ -15,6 +16,15 @@ export class Config {
   public autoTransitionTicketsToShipped: boolean;
   public enableDiagramGeneration: boolean;
   public diagramMaxFiles: number;
+  public llmProvider: string;
+  public githubApiUrl: string;
+  public githubServerUrl: string;
+
+  public sapAiCoreClientId: string | undefined;
+  public sapAiCoreClientSecret: string | undefined;
+  public sapAiCoreTokenUrl: string | undefined;
+  public sapAiCoreBaseUrl: string | undefined;
+  public sapAiResourceGroup: string | undefined;
 
   constructor() {
     // Required GitHub token
@@ -23,16 +33,47 @@ export class Config {
       throw new Error("GITHUB_TOKEN is not set");
     }
 
-    // Required LLM settings
+    this.llmModel = getInput("llm-model") || process.env.LLM_MODEL || getInput("llm_model");
+    if (!this.llmModel?.length) {
+      throw new Error("LLM_MODEL is not set");
+    }
+
+    this.llmProvider = process.env.LLM_PROVIDER || getInput("llm_provider");
+    if (!this.llmProvider?.length) {
+      this.llmProvider = AIProviderType.AI_SDK;
+      console.log(`Using default LLM_PROVIDER '${this.llmProvider}'`);
+    }
+
     this.llmApiKey = getInput("llm-api-key") || process.env.LLM_API_KEY || "";
-    if (!this.llmApiKey) {
+    const isSapAiSdk = this.llmProvider === AIProviderType.SAP_AI_SDK;
+    // SAP AI SDK does not require an API key
+    if (!this.llmApiKey && !isSapAiSdk) {
       throw new Error("LLM_API_KEY is not set");
     }
 
-    this.llmModel = getInput("llm-model") || process.env.LLM_MODEL || "";
-    if (!this.llmModel) {
-      throw new Error("LLM_MODEL is not set");
+    // SAP AI Core configuration
+    this.sapAiCoreClientId = process.env.SAP_AI_CORE_CLIENT_ID;
+    this.sapAiCoreClientSecret = process.env.SAP_AI_CORE_CLIENT_SECRET;
+    this.sapAiCoreTokenUrl = process.env.SAP_AI_CORE_TOKEN_URL;
+    this.sapAiCoreBaseUrl = process.env.SAP_AI_CORE_BASE_URL;
+    this.sapAiResourceGroup = process.env.SAP_AI_RESOURCE_GROUP;
+    if (
+      isSapAiSdk &&
+      (!this.sapAiCoreClientId ||
+        !this.sapAiCoreClientSecret ||
+        !this.sapAiCoreTokenUrl ||
+        !this.sapAiCoreBaseUrl)
+    ) {
+      throw new Error(
+        "SAP AI Core configuration is not set. Please set SAP_AI_CORE_CLIENT_ID, SAP_AI_CORE_CLIENT_SECRET, SAP_AI_CORE_TOKEN_URL, and SAP_AI_CORE_BASE_URL."
+      );
     }
+
+    // GitHub Enterprise Server support
+    this.githubApiUrl =
+      process.env.GITHUB_API_URL || getInput('github_api_url') || 'https://api.github.com';
+    this.githubServerUrl =
+      process.env.GITHUB_SERVER_URL || getInput('github_server_url') || 'https://github.com';
 
     // JIRA settings
     this.jiraHost = getInput("jira-host") || process.env.JIRA_HOST || "";
@@ -73,24 +114,60 @@ export class Config {
     }
 
     // Custom style guide rules
-    const styleGuideRules = getMultilineInput('style_guide_rules');
-    if (styleGuideRules.length && styleGuideRules[0].trim().length) {
-      this.styleGuideRules = styleGuideRules.join("\n");
+    try {
+      const styleGuideRules = getMultilineInput("style_guide_rules") || [];
+      if (
+        Array.isArray(styleGuideRules) &&
+        styleGuideRules.length &&
+        styleGuideRules[0].trim().length
+      ) {
+        this.styleGuideRules = styleGuideRules.join("\n");
+      }
+    } catch (e) {
+      console.error("Error loading style guide rules:", e);
     }
 
     // Load additional inputs for description overwrite disable lists
-    const disableReposInput = getMultilineInput('disable_description_overwrite_repos');
+    const disableReposInput = getMultilineInput('disable_description_overwrite_repos') || [];
     if (disableReposInput.length && disableReposInput[0].trim().length) {
       this.disableDescriptionOverwriteRepos = [...new Set([...this.disableDescriptionOverwriteRepos, ...disableReposInput.flatMap(line => line.split(',')).map(r => r.trim().toLowerCase()).filter(r => r.length > 0)])];
     }
 
-    const disableUsersInput = getMultilineInput('disable_description_overwrite_users');
+    const disableUsersInput = getMultilineInput('disable_description_overwrite_users') || [];
     if (disableUsersInput.length && disableUsersInput[0].trim().length) {
       this.disableDescriptionOverwriteUsers = [...new Set([...this.disableDescriptionOverwriteUsers, ...disableUsersInput.flatMap(line => line.split(',')).map(u => u.trim().toLowerCase()).filter(u => u.length > 0)])];
     }
   }
 }
 
-const config = new Config();
+// For testing, we'll modify how the config instance is created
+// This prevents the automatic loading when the module is imported
+let configInstance: Config | null = null;
 
-export default config;
+// If not in test environment, create and configure the instance
+if (process.env.NODE_ENV !== "test") {
+  configInstance = new Config();
+}
+
+// Export the instance or a function to create one for tests
+export default process.env.NODE_ENV === "test"
+  ? {
+      // Default values for tests
+      githubToken: "mock-token",
+      llmApiKey: "mock-api-key",
+      llmModel: "mock-model",
+      llmProvider: "mock-provider",
+      styleGuideRules: "",
+      sapAiCoreClientId: "mock-client-id",
+      sapAiCoreClientSecret: "mock-client-secret",
+      sapAiCoreTokenUrl: "mock-token-url",
+      sapAiCoreBaseUrl: "mock-base-url",
+      sapAiResourceGroup: "default",
+      githubApiUrl: "https://api.github.com",
+      githubServerUrl: "https://github.com",
+      jiraHost: "", jiraUsername: "", jiraApiToken: "", jiraProjects: [], jiraDefaultProject: "",
+      disableDescriptionOverwriteRepos: [], disableDescriptionOverwriteUsers: [],
+      autoTransitionTicketsToShipped: true, enableDiagramGeneration: true, diagramMaxFiles: 10,
+      loadInputs: () => {},
+    }
+  : configInstance!;

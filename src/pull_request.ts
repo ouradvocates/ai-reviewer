@@ -24,6 +24,8 @@ import {
   associateTicketWithEpic 
 } from "./jira";
 
+const IS_DRY_RUN = process.env.DRY_RUN === "1" || process.env.DRY_RUN === "true";
+
 export async function handlePullRequest() {
   const context = await loadContext();
   if (
@@ -40,7 +42,7 @@ export async function handlePullRequest() {
     return;
   }
 
-  const octokit = initOctokit(config.githubToken);
+  const octokit = initOctokit(config.githubToken, config.githubApiUrl);
 
   if (shouldIgnorePullRequest(pull_request)) {
     return;
@@ -56,7 +58,7 @@ export async function handlePullRequest() {
 
   // Handle PR close/merge events
   if (context.payload.action === "closed") {
-    if (!config.jiraHost) {
+    if (IS_DRY_RUN || !config.jiraHost) {
       // JIRA not configured; skip ticket state updates
       return;
     }
@@ -141,7 +143,7 @@ export async function handlePullRequest() {
     let epicTicket: string | null = null;
     let ticketTypes: Record<string, string> = {};
 
-    if (config.jiraHost) {
+    if (config.jiraHost && !IS_DRY_RUN) {
       // First check branch name
       if (pull_request.head.ref) {
         const branchTicket = await findTicketFromBranch(pull_request.head.ref);
@@ -245,7 +247,9 @@ export async function handlePullRequest() {
         config.disableDescriptionOverwriteRepos.includes(repoFullName) ||
         config.disableDescriptionOverwriteUsers.includes(prUser);
 
-      if (!shouldSkipDescriptionUpdate) {
+      if (IS_DRY_RUN) {
+        info("DRY-RUN: would update PR title and description");
+      } else if (!shouldSkipDescriptionUpdate) {
         await octokit.rest.pulls.update({
           ...context.repo,
           pull_number: pull_request.number,
@@ -305,7 +309,9 @@ export async function handlePullRequest() {
     // Remove duplicates
     labelsToAdd = [...new Set(labelsToAdd)];
 
-    if (labelsToAdd.length > 0) {
+    if (IS_DRY_RUN) {
+      info(`DRY-RUN: would add labels: ${labelsToAdd.join(", ")}`);
+    } else if (labelsToAdd.length > 0) {
       info(`Adding labels: ${labelsToAdd.join(', ')}`);
       try {
         await octokit.rest.issues.addLabels({
@@ -411,7 +417,15 @@ export async function handlePullRequest() {
     return;
   }
 
-  if (overviewComment) {
+  if (IS_DRY_RUN) {
+    const body = buildLoadingMessage(
+      (lastCommitReviewed ?? pull_request.base.sha),
+      commitsToReview,
+      filesToReview
+    );
+    info(`DRY-RUN: would ${overviewComment ? 'update' : 'create'} overview loading comment`);
+    console.log(body);
+  } else if (overviewComment) {
     await octokit.rest.issues.updateComment({
       ...context.repo,
       comment_id: overviewComment.id,
@@ -452,24 +466,34 @@ export async function handlePullRequest() {
     pull_request.title.includes("@presubmit")
   ) {
     info(`title contains mention of presubmit.ai, so generating a new title`);
-    await octokit.rest.pulls.update({
-      ...context.repo,
-      pull_number: pull_request.number,
-      title: reviewSummary.title,
-      // body: summary.description,
-    });
+    if (IS_DRY_RUN) {
+      info(`DRY-RUN: would update PR title to: ${reviewSummary.title}`);
+    } else {
+      await octokit.rest.pulls.update({
+        ...context.repo,
+        pull_number: pull_request.number,
+        title: reviewSummary.title,
+        // body: reviewSummary.description,
+      });
+    }
   }
 
   // Update overview comment with the PR overview
-  await octokit.rest.issues.updateComment({
-    ...context.repo,
-    comment_id: overviewComment.id,
-    body: buildOverviewMessage(
-      reviewSummary,
-      commits.map((c) => c.sha)
-    ),
-  });
-  info(`updated overview comment with walkthrough`);
+  const walkthroughBody = buildOverviewMessage(
+    reviewSummary,
+    commits.map((c: any) => c.sha)
+  );
+  if (IS_DRY_RUN) {
+    info(`DRY-RUN: would update overview comment with walkthrough`);
+    console.log(walkthroughBody);
+  } else if (overviewComment) {
+    await octokit.rest.issues.updateComment({
+      ...context.repo,
+      comment_id: overviewComment.id,
+      body: walkthroughBody,
+    });
+    info(`updated overview comment with walkthrough`);
+  }
 
   // ======= START REVIEW =======
 
@@ -491,6 +515,25 @@ export async function handlePullRequest() {
   const comments = review.comments.filter(
     (c) => c.content.trim() !== "" && filesToDiff.some((f) => f.filename === c.file)
   );
+
+  if (IS_DRY_RUN) {
+    info(`DRY-RUN: would submit review with ${comments.length} inline comments`);
+    const finalBody = buildOverviewMessage(
+      reviewSummary,
+      commits.map((c: any) => c.sha)
+    );
+    console.log('=== Final Overview (dry-run) ===');
+    console.log(finalBody);
+    if (comments.length) {
+      console.log('=== Inline Comments (dry-run) ===');
+      for (const c of comments) {
+        const range = c.start_line && c.end_line ? `${c.start_line}-${c.end_line}` : `${c.end_line ?? ''}`;
+        console.log(`• ${c.file}:${range} ${c.label ? '['+c.label+'] ' : ''}${c.critical ? '(critical) ' : ''}\n${c.content}\n`);
+      }
+    }
+    return;
+  }
+
   await submitReview(
     octokit,
     context,
