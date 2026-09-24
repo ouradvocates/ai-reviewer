@@ -479,6 +479,12 @@ Start with a Summary section that provides a high-level overview, then fill in t
 
   let filledTemplate = response.filledTemplate;
 
+  // Let the caller skip the entire update, preserving the existing PR body.
+  // Check before diagram generation, which could otherwise hide an empty result.
+  if (!filledTemplate.trim()) {
+    throw new Error("PR description generation returned an empty template");
+  }
+
   // Generate diagram if enabled and summary is provided
   if (config.enableDiagramGeneration && summary) {
     try {

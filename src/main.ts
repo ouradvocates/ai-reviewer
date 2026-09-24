@@ -7,10 +7,10 @@ async function main(): Promise<void> {
     switch (process.env.GITHUB_EVENT_NAME) {
       case "pull_request":
       case "pull_request_target":
-        handlePullRequest();
+        await handlePullRequest();
         break;
       case "pull_request_review_comment":
-        handlePullRequestComment();
+        await handlePullRequestComment();
         break;
       default:
         warning("Skipped: unsupported github event");

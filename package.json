@@ -4,6 +4,7 @@
   "description": "",
   "main": "dist/index.js",
   "scripts": {
+    "test": "node --test tests/*.test.cjs",
     "dev": "DEBUG=true npx tsx -r dotenv/config src/main.ts",
     "build": "npx esbuild src/main.ts --bundle --platform=node --outfile=dist/index.js --minify",
     "start": "node dist/index.js",
