@@ -7,7 +7,7 @@ branding:
   tags: "ai,code-review,ai-assisted,automation,pull-requests,linting,ci,autofix,devtools"
 
 runs:
-  using: "node20"
+  using: "node24"
   main: "dist/index.js"
 
 inputs:
@@ -66,9 +66,9 @@ inputs:
 
   github_api_url:
     required: false
-    description: 'GitHub API URL for GitHub Enterprise Server (e.g., https://github.example.com/api/v3)'
-    default: 'https://api.github.com'
+    description: "GitHub API URL for GitHub Enterprise Server (e.g., https://github.example.com/api/v3)"
+    default: "https://api.github.com"
   github_server_url:
     required: false
-    description: 'GitHub Server URL for GitHub Enterprise Server (e.g., https://github.example.com)'
-    default: 'https://github.com'
+    description: "GitHub Server URL for GitHub Enterprise Server (e.g., https://github.example.com)"
+    default: "https://github.com"
