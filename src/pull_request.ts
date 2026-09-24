@@ -2,7 +2,7 @@ import { info, warning } from "@actions/core";
 import config from "./config";
 import { initOctokit } from "./octokit";
 import { loadContext } from "./context";
-import { runSummaryPrompt, AIComment, runReviewPrompt } from "./prompts";
+import { runSummaryPrompt, AIComment, runReviewPrompt, fillPRTemplate } from "./prompts";
 import {
   buildLoadingMessage,
   buildReviewSummary,
@@ -15,6 +15,14 @@ import { FileDiff, parseFileDiff } from "./diff";
 import { Octokit } from "@octokit/action";
 import { Context } from "@actions/github/lib/context";
 import { buildComment, listPullRequestCommentThreads } from "./comments";
+import { 
+  findTicketFromBranch, 
+  searchRelatedTickets, 
+  updateTicketState, 
+  findTicketsInCommitMessages, 
+  getTicketType, 
+  associateTicketWithEpic 
+} from "./jira";
 
 const IS_DRY_RUN = process.env.DRY_RUN === "1" || process.env.DRY_RUN === "true";
 
@@ -40,14 +48,292 @@ export async function handlePullRequest() {
     return;
   }
 
-  // Get commit messages
+  // Get commit messages for both PR open and close events
   const { data: commits } = await octokit.rest.pulls.listCommits({
     ...context.repo,
     pull_number: pull_request.number,
   });
   info(`successfully fetched commit messages`);
+  const commitMessages = commits.map((commit) => commit.commit.message);
 
-  // Find or create overview comment with the summary
+  // Handle PR close/merge events
+  if (context.payload.action === "closed") {
+    if (IS_DRY_RUN || !config.jiraHost) {
+      // JIRA not configured; skip ticket state updates
+      return;
+    }
+    // First check for tickets in PR description
+    const ticketsFromDescription: string[] = [];
+    
+    // Look for tickets in markdown links format: [ABC-123]
+    const ticketLinkMatches = [...(pull_request.body || "").matchAll(/\[([A-Z]+-\d+)\]/g)];
+
+    // Also look for tickets in plain text format: ABC-123
+    const ticketPlainMatches = [...(pull_request.body || "").matchAll(/\b([A-Z]+-\d+)\b/g)];
+
+    // Combine all matches
+    const allDescriptionMatches = [...ticketLinkMatches, ...ticketPlainMatches];
+
+    if (allDescriptionMatches.length > 0) {
+      for (const match of allDescriptionMatches) {
+        ticketsFromDescription.push(match[1]);
+      }
+      info(`Found ticket keys in PR description: ${[...new Set(ticketsFromDescription)].join(', ')}`);
+    }
+    
+    // Then check for tickets in commit messages
+    const ticketsFromCommits = await findTicketsInCommitMessages(commitMessages);
+    info(`Found ticket keys in commit messages: ${ticketsFromCommits.join(', ')}`);
+    
+    // Also check branch name for tickets
+    let ticketsFromBranch: string[] = [];
+    if (pull_request.head.ref) {
+      const branchTicket = await findTicketFromBranch(pull_request.head.ref);
+      if (branchTicket) {
+        ticketsFromBranch.push(branchTicket);
+        info(`Found ticket key in branch name: ${branchTicket}`);
+      }
+    }
+
+    // Combine all found tickets and remove duplicates
+    const allTickets = [...new Set([...ticketsFromDescription, ...ticketsFromCommits, ...ticketsFromBranch])];
+    
+    if (allTickets.length > 0) {
+      info(`Processing ${allTickets.length} JIRA tickets: ${allTickets.join(', ')}`);
+      
+      // Update state for each ticket based on type
+      for (const ticketKey of allTickets) {
+        await updateTicketState(ticketKey, pull_request.merged ? "merged" : "closed");
+      }
+    } else {
+      warning('No JIRA ticket keys found in PR description, commit messages, or branch name');
+    }
+    
+    return;
+  }
+
+  // Update description on PR open, reopen, new pushes, or when marked ready for review
+  if (
+    context.payload.action === "opened" ||
+    context.payload.action === "reopened" ||
+    context.payload.action === "synchronize" ||
+    context.payload.action === "ready_for_review"
+  ) {
+    info(`PR #${pull_request.number} opened, checking description and title...`);
+    info(`Current title: "${pull_request.title}"`);
+    info(`Current description: ${pull_request.body || '(empty)'}`);
+    
+    // Get modified files for description generation
+    const { data: files } = await octokit.rest.pulls.listFiles({
+      ...context.repo,
+      pull_number: pull_request.number,
+    });
+
+    // Generate PR summary first to get a good title
+    const summary = await runSummaryPrompt({
+      prTitle: pull_request.title,
+      prDescription: pull_request.body || "",
+      commitMessages: commitMessages,
+      files: files,
+    });
+
+    // Try to find JIRA tickets (only when JIRA is configured)
+    let jiraTickets: string[] = [];
+    let primaryTicket: string | null = null;
+    let epicTicket: string | null = null;
+    let ticketTypes: Record<string, string> = {};
+
+    if (config.jiraHost && !IS_DRY_RUN) {
+      // First check branch name
+      if (pull_request.head.ref) {
+        const branchTicket = await findTicketFromBranch(pull_request.head.ref);
+        if (branchTicket) {
+          jiraTickets.push(branchTicket);
+          primaryTicket = branchTicket;
+        }
+      }
+      
+      // Then check commit messages
+      const commitTickets = await findTicketsInCommitMessages(commitMessages);
+      
+      // Add any new tickets found in commits
+      for (const ticket of commitTickets) {
+        if (!jiraTickets.includes(ticket)) {
+          jiraTickets.push(ticket);
+          // If we don't have a primary ticket yet, use the first one from commits
+          if (!primaryTicket) {
+            primaryTicket = ticket;
+          }
+        }
+      }
+      
+      // If no tickets found yet, search for related tickets
+      if (jiraTickets.length === 0) {
+        const relatedTicket = await searchRelatedTickets(summary.title, summary.description);
+        if (relatedTicket) {
+          jiraTickets.push(relatedTicket);
+          primaryTicket = relatedTicket;
+        }
+      }
+
+      // Categorize tickets and find Epics
+      ticketTypes = {};
+      
+      for (const ticket of jiraTickets) {
+        const ticketType = await getTicketType(ticket);
+        if (ticketType) {
+          ticketTypes[ticket] = ticketType;
+          
+          // If this is an Epic or Idea, mark it for potential linking
+          if (ticketType === 'Epic' || ticketType === 'Idea') {
+            epicTicket = ticket; // Store the Epic or Idea key
+          }
+        }
+      }
+      
+      // If we found tickets but no Epic, try to find a related Epic
+      if (jiraTickets.length > 0 && !epicTicket && primaryTicket) {
+        // Try to find an Epic to associate with
+        for (const ticket of jiraTickets) {
+          if (ticket !== primaryTicket && ticketTypes[ticket] !== 'Epic') {
+            // Link non-primary, non-Epic tickets to the primary ticket
+            await associateTicketWithEpic(ticket, primaryTicket);
+          }
+        }
+      }
+    }
+
+    try {
+      const filledTemplate = await fillPRTemplate({
+        prTitle: summary.title,
+        prDescription: pull_request.body || "",
+        commitMessages: commitMessages,
+        files: files,
+      }, summary);
+
+      let ticketReferences = '';
+      if (jiraTickets.length > 0) {
+        const ticketsByType: Record<string, string[]> = {};
+        
+        for (const ticket of jiraTickets) {
+          const type = ticketTypes[ticket] || 'Task';
+          if (!ticketsByType[type]) {
+            ticketsByType[type] = [];
+          }
+          ticketsByType[type].push(ticket);
+        }
+        
+        ticketReferences = '## JIRA References\n\n';
+        
+        for (const type in ticketsByType) {
+          ticketReferences += `### ${type}s\n`;
+          for (const ticket of ticketsByType[type]) {
+            ticketReferences += `- [${ticket}](${config.jiraHost}/browse/${ticket})\n`;
+          }
+          ticketReferences += '\n';
+        }
+      }
+
+      const description = jiraTickets.length > 0
+        ? `${ticketReferences}\n${filledTemplate}`
+        : filledTemplate;
+
+      const repoName = context.repo.repo.toLowerCase();
+      const repoFullName = `${context.repo.owner.toLowerCase()}/${repoName}`;
+      const prUser = pull_request.user.login.toLowerCase();
+
+      const shouldSkipDescriptionUpdate =
+        config.disableDescriptionOverwriteRepos.includes(repoName) ||
+        config.disableDescriptionOverwriteRepos.includes(repoFullName) ||
+        config.disableDescriptionOverwriteUsers.includes(prUser);
+
+      if (IS_DRY_RUN) {
+        info("DRY-RUN: would update PR title and description");
+      } else if (!shouldSkipDescriptionUpdate) {
+        await octokit.rest.pulls.update({
+          ...context.repo,
+          pull_number: pull_request.number,
+          title: summary.title,
+          body: description,
+        });
+
+        info(`Updated PR title to: "${summary.title}"`);
+        info("Updated PR description with filled template");
+        if (jiraTickets.length > 0) {
+          info(`Linked JIRA tickets: ${jiraTickets.join(', ')}`);
+        }
+      } else {
+        info("Skipping PR title and description update based on configuration.");
+      }
+    } catch (templateError) {
+      warning(`Failed to fill PR template, continuing with review: ${templateError}`);
+    }
+
+    // --- START: Auto-labeling logic ---
+
+    let labelsToAdd: string[] = [];
+    const prContent = `${summary.title.toLowerCase()} ${summary.description.toLowerCase()}`;
+
+    // Keyword-based labels
+    if (prContent.includes('fix') || prContent.includes('bug')) {
+      labelsToAdd.push('bug');
+    }
+    if (prContent.includes('feat') || prContent.includes('feature')) {
+      labelsToAdd.push('enhancement');
+    }
+    if (prContent.includes('docs') || prContent.includes('documentation')) {
+      labelsToAdd.push('documentation');
+    }
+    if (prContent.includes('refactor')) {
+      labelsToAdd.push('refactor');
+    }
+    if (prContent.includes('test')) {
+      labelsToAdd.push('test');
+    }
+
+    // File path-based labels
+    const changedFiles = files.map(f => f.filename);
+    if (changedFiles.some(f => f.startsWith('src/ui/'))) {
+      labelsToAdd.push('frontend');
+    }
+    if (changedFiles.some(f => f.startsWith('src/api/') || f.startsWith('src/server/'))) {
+      labelsToAdd.push('backend');
+    }
+    if (changedFiles.some(f => f.startsWith('docs/'))) {
+      labelsToAdd.push('documentation');
+    }
+    if (changedFiles.some(f => f.startsWith('test/') || f.endsWith('.test.ts') || f.endsWith('.spec.ts'))) {
+      labelsToAdd.push('test');
+    }
+
+    // Remove duplicates
+    labelsToAdd = [...new Set(labelsToAdd)];
+
+    if (IS_DRY_RUN) {
+      info(`DRY-RUN: would add labels: ${labelsToAdd.join(", ")}`);
+    } else if (labelsToAdd.length > 0) {
+      info(`Adding labels: ${labelsToAdd.join(', ')}`);
+      try {
+        await octokit.rest.issues.addLabels({
+          ...context.repo,
+          issue_number: pull_request.number,
+          labels: labelsToAdd,
+        });
+        info('Successfully added labels.');
+      } catch (error) {
+        warning(`Failed to add labels: ${error}`);
+      }
+    } else {
+      info('No applicable labels found based on rules.');
+    }
+
+    // --- END: Auto-labeling logic ---
+  }
+
+  // Continue with the rest of the function for review generation
+  // We'll reuse the commits and commitMessages variables from above
+  
+  // Maybe fetch review comments
   const { data: existingComments } = await octokit.rest.issues.listComments({
     ...context.repo,
     issue_number: pull_request.number,
@@ -66,11 +352,11 @@ export async function handlePullRequest() {
     : [];
 
   // Get modified files
-  const { data: files } = await octokit.rest.pulls.listFiles({
+  const { data: filesToDiff } = await octokit.rest.pulls.listFiles({
     ...context.repo,
     pull_number: pull_request.number,
   });
-  let filesToReview = files.map((file) =>
+  let filesToReview = filesToDiff.map((file) =>
     parseFileDiff(file, reviewCommentThreads)
   );
   info(`successfully fetched file diffs`);
@@ -80,14 +366,24 @@ export async function handlePullRequest() {
   if (overviewComment) {
     info(`running incremental review`);
     try {
-      const payload = JSON.parse(
-        overviewComment.body
-          ?.split(PAYLOAD_TAG_OPEN)[1]
-          .split(PAYLOAD_TAG_CLOSE)[0] || "{}"
-      );
-      commitsReviewed = payload.commits;
+      const body = overviewComment.body ?? "";
+      const openIdx = body.indexOf(PAYLOAD_TAG_OPEN);
+      const closeIdx = openIdx !== -1
+        ? body.indexOf(PAYLOAD_TAG_CLOSE, openIdx + PAYLOAD_TAG_OPEN.length)
+        : -1;
+      const payloadStr =
+        openIdx !== -1 && closeIdx !== -1
+          ? body.slice(openIdx + PAYLOAD_TAG_OPEN.length, closeIdx)
+          : "{}";
+      const payload = JSON.parse(payloadStr);
+      commitsReviewed = payload.commits ?? [];
     } catch (error) {
       warning(`error parsing overview payload: ${error}`);
+    }
+
+    if (context.payload.action === "ready_for_review") {
+      info("PR marked ready for review — resetting commit tracking for full review");
+      commitsReviewed = [];
     }
 
     // Check if there are any incremental changes
@@ -156,13 +452,13 @@ export async function handlePullRequest() {
   }
 
   // Generate PR summary
-  const summary = await runSummaryPrompt({
+  const reviewSummary = await runSummaryPrompt({
     prTitle: pull_request.title,
     prDescription: pull_request.body || "",
-    commitMessages: commits.map((commit) => commit.commit.message),
-    files: files,
+    commitMessages: commitMessages,
+    files: filesToDiff,
   });
-  info(`generated pull request summary: ${summary.title}`);
+  info(`generated pull request summary: ${reviewSummary.title}`);
 
   // Update PR title if @presubmitai is mentioned in the title
   if (
@@ -171,20 +467,20 @@ export async function handlePullRequest() {
   ) {
     info(`title contains mention of presubmit.ai, so generating a new title`);
     if (IS_DRY_RUN) {
-      info(`DRY-RUN: would update PR title to: ${summary.title}`);
+      info(`DRY-RUN: would update PR title to: ${reviewSummary.title}`);
     } else {
       await octokit.rest.pulls.update({
         ...context.repo,
         pull_number: pull_request.number,
-        title: summary.title,
-        // body: summary.description,
+        title: reviewSummary.title,
+        // body: reviewSummary.description,
       });
     }
   }
 
   // Update overview comment with the PR overview
   const walkthroughBody = buildOverviewMessage(
-    summary,
+    reviewSummary,
     commits.map((c: any) => c.sha)
   );
   if (IS_DRY_RUN) {
@@ -201,23 +497,29 @@ export async function handlePullRequest() {
 
   // ======= START REVIEW =======
 
+  // Skip review for draft PRs
+  if (pull_request?.draft) {
+    info("Skipping review for draft pull request");
+    return;
+  }
+
   const review = await runReviewPrompt({
     files: filesToReview,
     prTitle: pull_request.title,
     prDescription: pull_request.body || "",
-    prSummary: summary.description,
+    prSummary: reviewSummary.description,
   });
   info(`reviewed pull request`);
 
   // Post review comments
   const comments = review.comments.filter(
-    (c) => c.content.trim() !== "" && files.some((f: any) => f.filename === c.file)
+    (c) => c.content.trim() !== "" && filesToDiff.some((f) => f.filename === c.file)
   );
 
   if (IS_DRY_RUN) {
     info(`DRY-RUN: would submit review with ${comments.length} inline comments`);
     const finalBody = buildOverviewMessage(
-      summary,
+      reviewSummary,
       commits.map((c: any) => c.sha)
     );
     console.log('=== Final Overview (dry-run) ===');
@@ -244,6 +546,18 @@ export async function handlePullRequest() {
     filesToReview
   );
   info(`posted review comments`);
+
+  // Add the 'ai-reviewed' label after submitting the review
+  try {
+    await octokit.rest.issues.addLabels({
+      ...context.repo,
+      issue_number: pull_request.number,
+      labels: ["ai-reviewed"],
+    });
+    info(`Successfully added label 'ai-reviewed' to PR #${pull_request.number}`);
+  } catch (labelError) {
+    warning(`Failed to add label 'ai-reviewed' to PR #${pull_request.number}: ${labelError}`);
+  }
 }
 
 async function submitReview(
@@ -315,6 +629,26 @@ async function submitReview(
         c.start_line && c.start_line < c.end_line ? "RIGHT" : undefined,
     }));
 
+    // Find existing review summary
+    const { data: reviews } = await octokit.pulls.listReviews({
+      ...context.repo,
+      pull_number: pull_request.number,
+    });
+
+    const lastReview = reviews
+      .reverse()
+      .find(r => r.body?.includes("### Review Summary"));
+
+    // Build new review summary
+    const newSummary = buildReviewSummary(
+      context,
+      files,
+      commits,
+      lineComments,
+      skippedComments,
+      lastReview?.body // Pass existing summary to be extended
+    );
+
     const review = await octokit.pulls.createReview({
       ...context.repo,
       pull_number: pull_request.number,
@@ -327,13 +661,7 @@ async function submitReview(
       pull_number: pull_request.number,
       review_id: review.data.id,
       event: "COMMENT",
-      body: buildReviewSummary(
-        context,
-        files,
-        commits,
-        lineComments,
-        skippedComments
-      ),
+      body: newSummary,
     });
   } catch (error) {
     warning(`error submitting review: ${error}`);

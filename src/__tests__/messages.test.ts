@@ -85,11 +85,11 @@ describe('Messages', () => {
 
     const message = buildOverviewMessage(mockSummary, ['commit1', 'commit2']);
 
-    expect(message).toContain('PR Summary');
-    expect(message).toContain('This is a test PR');
-    expect(message).toContain('src/test1.ts');
+    expect(message).toContain('### Changes');
+    expect(message).toContain('#### ⚙️ src');
+    expect(message).toContain('test1.ts');
     expect(message).toContain('Modified test file');
-    expect(message).toContain('src/test2.ts');
+    expect(message).toContain('test2.ts');
     expect(message).toContain('Added new file');
     expect(message).toContain(OVERVIEW_MESSAGE_SIGNATURE);
     expect(message).toContain(PAYLOAD_TAG_OPEN);

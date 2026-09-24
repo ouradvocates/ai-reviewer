@@ -71,6 +71,16 @@ export async function handlePullRequestComment() {
     return;
   }
 
+  // Check if we've already commented on this thread
+  const hasExistingResponse = commentThread.comments.some(comment =>
+    isOwnComment(comment.body)
+  );
+
+  if (hasExistingResponse) {
+    info("already responded to this thread, skipping");
+    return;
+  }
+
   // Run prompt
   const response = await runReviewCommentPrompt({
     commentThread,

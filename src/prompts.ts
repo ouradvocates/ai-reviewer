@@ -3,6 +3,7 @@ import { z } from "zod";
 import { formatFileDiff, File, FileDiff, generateFileCodeDiff } from "./diff";
 import { ReviewCommentThread } from "./comments";
 import config from "./config";
+import { generateDiagram, formatDiagramForMarkdown, analyzeForDiagramOpportunities } from "./diagrams";
 
 type PullRequestSummaryPrompt = {
   prTitle: string;
@@ -27,13 +28,14 @@ export async function runSummaryPrompt(
 ): Promise<PullRequestSummary> {
   let systemPrompt = `You are a helpful assistant that summarizes Git Pull Requests (PRs).`;
 
-  systemPrompt += `Your task is to provide a full description for the PR content - title, type, description and affected file summaries.\n`;
+  systemPrompt += `Your task is to provide a concise description for the PR content - title, type, description and affected file summaries.\n`;
 
   systemPrompt += `
+- VERY IMPORTANT: Be as brief as possible while maintaining clarity. Use short, direct sentences.
 - Keep in mind that the 'Original title', 'Original description' and 'Commit messages' sections may be partial, simplistic, non-informative or out of date. Hence, compare them to the PR diff code, and use them only as a reference.
 - The generated title and description should prioritize the most significant changes.
 - When quoting variables or names from the code, use backticks (\`).
-- Return a summary for each single affected file or if there is nothing to summarize simply use the status of the change (ie. "New file").
+- Return a one-line summary for each affected file or if there is nothing to summarize simply use the status of the change (ie. "New file").
 - Start the overview with a verb at past tense like "Started", "Commented", "Generated" etc...
 
 IMPORTANT: Do not make assumptions about the code outside the diff. Do not assume variable could be optional if you don't see the type declaration. Do not suggest null checks unless you are sure this could lead to a runtime error.
@@ -83,15 +85,20 @@ Make sure each affected file is summarized and it's part of the returned JSON.
       ),
     description: z
       .string()
+      .default("")
       .describe("Informative description of the PR, describing its main theme"),
     files: z
       .array(fileSchema)
+      .default([])
       .describe(
         "List of files affected in the PR and summaries of their changes"
       ),
     type: z
-      .array(z.string())
-      .describe("One or more types that describe this PR's main theme. Example: BUG, TESTS, ENHANCEMENT, DOCUMENTATION, SECURITY, OTHER"),
+      .array(
+        z.string()
+      )
+      .default([])
+      .describe("One or more types that describe this PR's main theme."),
   });
 
   return (await runPrompt({
@@ -136,10 +143,14 @@ export async function runReviewPrompt(
 
   let systemPrompt = `
 <IMPORTANT INSTRUCTIONS>
-You are an experienced senior software engineer tasked with reviewing a Git Pull Request (PR). Your goal is to provide comments to improve code quality, catch typos, potential bugs or security issues, and provide meaningful code suggestions when applicable. You should not make comments about adding comments, about code formatting, about code style or give implementation suggestions.
+You are an experienced senior software engineer tasked with reviewing a Git Pull Request (PR). Your goal is to provide concise comments to improve code quality, catch typos, potential bugs or security issues, and provide meaningful code suggestions when applicable. You should not make comments about adding comments, about code formatting, about code style or give implementation suggestions.
+
+VERY IMPORTANT: Keep all comments as brief as possible. Use short, direct sentences. Focus only on the most critical issues.
     
 The review should focus on new code added in the PR code diff (lines starting with '+') and be actionable.
- 
+
+IMPORTANT: Your response must be a valid JSON object with a "review" object and a "comments" array. Do not stringify the comments array - it should be a proper JSON array, not a string.
+
 The PR diff will have the following structure:
 ======
 ## File: 'src/file1.py'
@@ -190,25 +201,32 @@ ${config.styleGuideRules}`
 <EXAMPLE>
 {
     "review": {
-    ...
-    }
+        "estimated_effort_to_review": 2,
+        "score": 85,
+        "has_relevant_tests": false,
+        "security_concerns": "No"
+    },
     "comments": [
-    {
-        content: "There's a typo in "upgorading" which should be "upgrading".",
-        header: "Fix typo in error message.",
-        label: "typo",
-        critical: false,
-        highlighted_code: "      No active plan. Enable code reviews by upgorading to a Pro plan",
-        ...
-    },
-    {
-        content: "Variable 'user_id' is used before it's defined. Consider moving the function call to the end of the file.",
-        header: "Potential runtime error in the code.",
-        label: "bug",
-        critical: true,
-        ...
-    },
-    ...
+        {
+            "file": "src/example.ts",
+            "start_line": 12,
+            "end_line": 12,
+            "content": "There's a typo in 'upgorading' which should be 'upgrading'.",
+            "header": "Fix typo in error message",
+            "label": "typo",
+            "critical": false,
+            "highlighted_code": "No active plan. Enable code reviews by upgorading to a Pro plan"
+        },
+        {
+            "file": "src/example.ts",
+            "start_line": 15,
+            "end_line": 15,
+            "content": "Variable 'user_id' is used before it's defined. Consider moving the function call to the end of the file.",
+            "header": "Potential runtime error in the code",
+            "label": "bug",
+            "critical": true,
+            "highlighted_code": "console.log(user_id);"
+        }
     ]
 }
 </EXAMPLE>
@@ -300,9 +318,17 @@ ${pr.files.map((file) => generateFileCodeDiff(file)).join("\n\n")}
   });
 
   let schema = z.object({
-    review: reviewSchema.describe("The full review of the PR"),
+    review: reviewSchema
+      .default({
+        estimated_effort_to_review: 3,
+        score: 70,
+        has_relevant_tests: false,
+        security_concerns: "No",
+      })
+      .describe("The full review of the PR"),
     comments: z
       .array(commentSchema)
+      .default([])
       .describe(
         "Comments about possible bugs, security concerns, code quality, typos or regressions introduced in this PR."
       ),
@@ -329,7 +355,9 @@ export async function runReviewCommentPrompt({
   commentThread,
   commentFileDiff,
 }: ReviewCommentPrompt): Promise<ReviewCommentResponse> {
-  let systemPrompt = `You are a helpful senior software engineer that reviews comments on Git Pull Requests (PRs). Your task is to provide a response to a comment on a PR review. The comment might be part of a longer comment thread, so make sure to respond to the specific comment and not the whole thread.
+  let systemPrompt = `You are a helpful senior software engineer that reviews comments on Git Pull Requests (PRs). Your task is to provide a brief response to a comment on a PR review. The comment might be part of a longer comment thread, so make sure to respond to the specific comment and not the whole thread.
+
+VERY IMPORTANT: Keep your response as brief as possible. Use short, direct sentences. Get straight to the point.
 
 The comment thread is specific to a line or multiple lines of code in a specific file. Keep that in mind when writing your response, but do not assume the code is complete or correct. Also, the comment might request you to suggest some changes or improvements outside the code snippet, so judge accordingly.
 
@@ -386,4 +414,115 @@ ${generateFileCodeDiff(commentFileDiff)}
     systemPrompt,
     schema,
   })) as ReviewCommentResponse;
+}
+
+export async function fillPRTemplate(
+  pr: PullRequestSummaryPrompt,
+  summary?: PullRequestSummary
+): Promise<string> {
+  let systemPrompt = `You are a helpful assistant that fills in GitHub Pull Request templates.
+Your task is to analyze the PR's changes and fill in the template sections with relevant information.
+
+Guidelines:
+- VERY IMPORTANT: Be as brief as possible in all sections. Use short, direct sentences.
+- Start with a "## Summary" section that provides a concise high-level overview (2-3 sentences max)
+- After the summary, if the description contains a template, preserve its structure and fill in each section
+- If there's no template, generate a brief description with sections for: Description (2-3 sentences), Changes (bullet points), Testing (1-2 sentences), and Impact (1 sentence)
+- Be specific but concise in your responses
+- Include only the most important technical details
+- Link to files and code when relevant using markdown
+- If a section is not applicable, write "N/A"
+- Use proper markdown formatting
+- Start descriptions with a verb in past tense
+- Preserve any existing GitHub issue references (e.g., "Fixes #123")
+- Keep any existing task lists or checkboxes, just fill in the details briefly
+
+IMPORTANT: 
+- Base your answers only on the actual changes in the PR
+- Do not make assumptions about code or functionality outside what's shown in the diffs
+- If the original description contains any valuable information, preserve it while expanding upon it
+- The Summary section should be extremely concise, focusing only on the key changes`;
+
+  let userPrompt = `Fill in the following PR description with information about these changes:
+
+<Current PR Description>
+${pr.prDescription}
+</Current PR Description>
+
+<PR Title>
+${pr.prTitle}
+</PR Title>
+
+<Commit Messages>
+${pr.commitMessages.join("\n")}
+</Commit Messages>
+
+<Affected Files>
+${pr.files.map((file) => `- ${file.status}: ${file.filename}`).join("\n")}
+</Affected Files>
+
+<File Diffs>
+${pr.files.map((file) => formatFileDiff(file)).join("\n\n")}
+</File Diffs>
+
+Start with a Summary section that provides a high-level overview, then fill in the rest of the description while maintaining any existing structure. Be specific and detailed.`;
+
+  const schema = z.object({
+    filledTemplate: z.string().default("").describe("The filled PR description with all sections completed, preserving any existing structure"),
+  });
+
+  const response = await runPrompt({
+    prompt: userPrompt,
+    systemPrompt,
+    schema,
+  });
+
+  let filledTemplate = response.filledTemplate;
+
+  // Let the caller skip the entire update, preserving the existing PR body.
+  // Check before diagram generation, which could otherwise hide an empty result.
+  if (!filledTemplate.trim()) {
+    throw new Error("PR description generation returned an empty template");
+  }
+
+  // Generate diagram if enabled and summary is provided
+  if (config.enableDiagramGeneration && summary) {
+    try {
+      const opportunities = analyzeForDiagramOpportunities(summary, pr.files);
+      
+      // Only attempt diagram generation if there are relevant changes
+      if (opportunities.hasApiChanges || opportunities.hasWorkflowChanges || 
+          opportunities.hasSchemaChanges || opportunities.hasArchitecturalChanges || 
+          opportunities.hasStateChanges) {
+        
+        const diagramResult = await generateDiagram({
+          summary,
+          files: pr.files.slice(0, config.diagramMaxFiles),
+          commitMessages: pr.commitMessages
+        });
+
+        if (diagramResult.shouldGenerate) {
+          const diagramMarkdown = formatDiagramForMarkdown(diagramResult);
+          if (diagramMarkdown) {
+            // Insert diagram after the summary section
+            const summaryIndex = filledTemplate.indexOf('## Summary');
+            if (summaryIndex !== -1) {
+              // Find the end of the summary section
+              const nextSectionIndex = filledTemplate.indexOf('\n## ', summaryIndex + 10);
+              const insertIndex = nextSectionIndex !== -1 ? nextSectionIndex : filledTemplate.length;
+              filledTemplate = filledTemplate.slice(0, insertIndex) + '\n' + diagramMarkdown + filledTemplate.slice(insertIndex);
+            } else {
+              // If no summary section, prepend the diagram
+              filledTemplate = diagramMarkdown + filledTemplate;
+            }
+          }
+        }
+      }
+    } catch (error) {
+      console.warn('Failed to generate diagram:', error);
+      // Continue without diagram - don't fail the entire process
+    }
+  }
+
+  return filledTemplate;
 }
