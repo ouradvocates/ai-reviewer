@@ -27,6 +27,7 @@ jest.mock('../config', () => ({
     githubToken: 'mock-token',
     llmApiKey: 'mock-api-key',
     llmModel: 'mock-model',
+    llmProvider: 'mock-provider',
     styleGuideRules: '',
     githubApiUrl: 'https://api.github.com',
     githubServerUrl: 'https://github.com',
@@ -133,6 +134,7 @@ describe('Messages', () => {
     );
 
     expect(summary).toContain('Pull request needs attention');
+    expect(summary).toContain('Reviewed with `mock-model` (mock-provider).');
     expect(summary).toContain('Review Summary');
     expect(summary).toContain('Commits Considered (2)');
     expect(summary).toContain('Files Processed (2)');
@@ -155,6 +157,7 @@ describe('Messages', () => {
     );
     
     expect(summary).toContain('LGTM!');
+    expect(summary).toContain('Reviewed with `mock-model` (mock-provider).');
     expect(summary).toContain('Actionable Comments (0)');
     expect(summary).toContain('Skipped Comments (0)');
     expect(summary).toContain('https://github.com/test-owner/test-repo/commit/');

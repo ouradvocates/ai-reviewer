@@ -259,6 +259,9 @@ export function buildReviewSummary(
     body += `🚨 **Pull request needs attention.**\n\n`;
   }
 
+  const provider = config.llmProvider ? ` (${config.llmProvider})` : "";
+  body += `Reviewed with \`${config.llmModel}\`${provider}.\n\n`;
+
   body += "### Review Summary\n\n";
 
   // If there's an existing summary, extract previous commits and comments
