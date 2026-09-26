@@ -21,6 +21,8 @@ jobs:
             echo "Error: LLM_API_KEY secret is not configured"
             exit 1
           fi
+      # pull_request_target checks out the base branch, which is the action this workflow runs.
+      - uses: actions/checkout@v4
       - uses: ./
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
