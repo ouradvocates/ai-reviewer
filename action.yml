@@ -64,6 +64,10 @@ inputs:
     description: 'Maximum number of files to analyze for diagram generation. Higher values may increase processing time.'
     default: '10'
 
+  llm_provider:
+    required: false
+    description: 'LLM provider. Use "ai-sdk" (default), "sap-ai-sdk", or "openrouter". With openrouter, LLM_MODEL can be any OpenRouter model id.'
+    default: ""
   github_api_url:
     required: false
     description: "GitHub API URL for GitHub Enterprise Server (e.g., https://github.example.com/api/v3)"

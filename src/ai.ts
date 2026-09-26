@@ -5,11 +5,13 @@ import { z } from "zod";
 import config from "./config";
 import { warning } from "@actions/core";
 import { AISDKProvider } from "./providers/ai-sdk";
+import { OpenRouterProvider } from "./providers/openrouter";
 import { SAPAIProvider } from "./providers/sapaicore";
 
 export enum AIProviderType {
   AI_SDK = "ai-sdk",
   SAP_AI_SDK = "sap-ai-sdk",
+  OPENROUTER = "openrouter",
 }
 
 const LLM_MODELS: Record<AIProviderType, ModelConfig[]> = {
@@ -198,6 +200,8 @@ const LLM_MODELS: Record<AIProviderType, ModelConfig[]> = {
       name: "o4-mini",
     },
   ],
+  // OpenRouter accepts any model id, so there is no fixed catalog.
+  [AIProviderType.OPENROUTER]: [],
 };
 
 export type InferenceConfig = {
@@ -217,13 +221,15 @@ class AIProviderFactory {
     modelConfig: ModelConfig
   ): AIProvider {
     switch (provider) {
-      case AIProviderType["AI_SDK"]:
+      case AIProviderType.AI_SDK:
         if (!modelConfig.createAi) {
           throw new Error(
             `No createAi function found for model ${modelConfig.name}`
           );
         }
         return new AISDKProvider(modelConfig.createAi, modelConfig.name);
+      case AIProviderType.OPENROUTER:
+        return new OpenRouterProvider(modelConfig.name);
       case AIProviderType["SAP_AI_SDK"]:
         return new SAPAIProvider(modelConfig.name);
       default:
@@ -372,7 +378,10 @@ export async function runPrompt({
   }
   const providerType = config.llmProvider as AIProviderType;
   const providerModels = LLM_MODELS[providerType];
-  const modelConfig = providerModels.find((m) => m.name === config.llmModel);
+  const modelConfig =
+    providerType === AIProviderType.OPENROUTER
+      ? { name: config.llmModel }
+      : providerModels.find((m) => m.name === config.llmModel);
   if (!modelConfig) {
     throw new Error(
       `Unknown LLM model: ${config.llmModel}. For provider ${

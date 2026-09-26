@@ -89,7 +89,7 @@ test(`${dryRun ? "dry run" : "empty generation"} preserves the PR body and reach
 });
 }
 
-for (const [provider, model] of [["ai-sdk", "claude-sonnet-4-5-20250929"], ["ai-sdk", "gpt-5"], ["sap-ai-sdk", "gpt-5"]]) {
+for (const [provider, model] of [["openrouter", "anthropic/claude-sonnet-4.5"], ["ai-sdk", "claude-sonnet-4-5-20250929"], ["ai-sdk", "gpt-5"], ["sap-ai-sdk", "gpt-5"]]) {
   test(`preserves provider ${provider}, model ${model}, and response recovery`, async () => {
     class Provider {
       async runInference() { throw { value: {} }; }
@@ -102,6 +102,7 @@ for (const [provider, model] of [["ai-sdk", "claude-sonnet-4-5-20250929"], ["ai-
       "./config": { default: { llmProvider: provider, llmModel: model } },
       "./providers/ai-sdk": { AISDKProvider: Provider },
       "./providers/sapaicore": { SAPAIProvider: Provider },
+      "./providers/openrouter": { OpenRouterProvider: Provider },
     });
     const { z } = require("zod");
     const result = await runPrompt({ prompt: "Example", schema: z.object({ filledTemplate: z.string().default("") }) });

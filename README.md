@@ -65,6 +65,7 @@ Interactive discussions help clarify implementation details:
      - [Anthropic Console](https://console.anthropic.com/) (Claude)
      - [OpenAI API](https://platform.openai.com/api-keys) (GPT-4)
      - [Google AI Studio](https://aistudio.google.com/app/apikeys) (Gemini)
+     - [OpenRouter](https://openrouter.ai/keys) (any model OpenRouter serves)
 
 ### Step 2: Create GitHub Workflow
 
@@ -108,6 +109,21 @@ The action requires:
 - `LLM_MODEL`: Which LLM model to use. Make sure the model is [supported](https://github.com/presubmit/ai-reviewer/blob/main/src/ai.ts) and matches the `LLM_API_KEY`.
 
 ### Optional Configuration
+
+To use [OpenRouter](https://openrouter.ai/), set `LLM_PROVIDER=openrouter` and put an
+OpenRouter API key in `LLM_API_KEY`. `LLM_MODEL` can be any OpenRouter model id, such
+as `anthropic/claude-sonnet-4.5`, `anthropic/claude-opus-5.5`, or `openai/gpt-4.1`.
+Those ids are not limited to the built-in `ai-sdk` catalog. OpenRouter calls
+use JSON schema output and are routed only to endpoints that support it.
+
+```yaml
+- uses: presubmit/ai-reviewer@latest
+  env:
+    GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
+    LLM_PROVIDER: openrouter
+    LLM_MODEL: "anthropic/claude-sonnet-4.5"
+```
 
 You can customize the behavior by adding these inputs to your workflow:
 
@@ -186,7 +202,7 @@ Make sure to replace `https://github.example.com` with your actual GitHub Enterp
 ### ⚡ Seamless Integration
 
 - 2-minute setup with GitHub Actions
-- Works with all major LLM providers (Claude, GPT-4, Gemini)
+- Works with all major LLM providers (Claude, GPT-4, Gemini, OpenRouter)
 - Instant feedback on every PR
 - Zero maintenance required
 
@@ -202,8 +218,8 @@ Run the reviewer locally against real PRs using your GitHub authentication.
 - GitHub CLI authenticated: `gh auth login`
 - `.env` file at repo root with:
   - `LLM_API_KEY=...` (your API key)
-  - `LLM_MODEL=...` (e.g., `claude-3-5-sonnet-20241022`, `gpt-4o-mini`)
-  - Optional: `LLM_PROVIDER=ai-sdk` (default)
+  - `LLM_MODEL=...` (e.g., `claude-3-5-sonnet-20241022`, `gpt-4o-mini`, or an OpenRouter id such as `anthropic/claude-sonnet-4.5`)
+  - Optional: `LLM_PROVIDER=ai-sdk` (default) or `openrouter`
 
 ### Build
 
