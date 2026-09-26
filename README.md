@@ -152,19 +152,19 @@ You can customize the behavior by adding these inputs to your workflow:
 If you're using GitHub Enterprise Server, you can configure the action to work with your instance by adding these environment variables:
 
 ```yaml
-      - uses: presubmit/ai-reviewer@latest
-        env:
-          GITHUB_API_URL: "https://github.example.com/api/v3"
-          GITHUB_SERVER_URL: "https://github.example.com"
+- uses: presubmit/ai-reviewer@latest
+  env:
+    GITHUB_API_URL: "https://github.example.com/api/v3"
+    GITHUB_SERVER_URL: "https://github.example.com"
 ```
 
 You can also configure these settings using input parameters:
 
 ```yaml
-      - uses: presubmit/ai-reviewer@latest
-        with:
-          github_api_url: "https://github.example.com/api/v3"
-          github_server_url: "https://github.example.com"
+- uses: presubmit/ai-reviewer@latest
+  with:
+    github_api_url: "https://github.example.com/api/v3"
+    github_server_url: "https://github.example.com"
 ```
 
 Make sure to replace `https://github.example.com` with your actual GitHub Enterprise Server URL.
@@ -231,16 +231,19 @@ pnpm build
 ### Commands
 
 **List PRs:**
+
 ```bash
 pnpm review -- --list-prs --state open --limit 5
 ```
 
 **Review a PR (dry-run):**
+
 ```bash
 pnpm review -- --pr 123 --dry-run
 ```
 
 **Save output to file:**
+
 ```bash
 # Auto-generates filename: dry/pr-123.txt
 pnpm review -- --pr 123 --dry-run --out
@@ -250,11 +253,13 @@ pnpm review -- --pr 123 --dry-run --out my-review.txt
 ```
 
 **Specify repository:**
+
 ```bash
 pnpm review -- --pr 123 --owner myorg --repo myrepo --dry-run
 ```
 
 Or set in `.env`:
+
 ```env
 GITHUB_REPOSITORY=myorg/myrepo
 ```
