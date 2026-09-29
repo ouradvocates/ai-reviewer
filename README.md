@@ -112,9 +112,10 @@ The action requires:
 
 To use [OpenRouter](https://openrouter.ai/), set `LLM_PROVIDER=openrouter` and put an
 OpenRouter API key in `LLM_API_KEY`. `LLM_MODEL` can be any OpenRouter model id, such
-as `anthropic/claude-sonnet-4.5`, `anthropic/claude-opus-5.5`, or `openai/gpt-4.1`.
+as `anthropic/claude-sonnet-4.5`, `anthropic/claude-opus-5.5`, or `openai/gpt-6.1-sol`.
 Those ids are not limited to the built-in `ai-sdk` catalog. OpenRouter calls
-use JSON schema output and are routed only to endpoints that support it.
+use JSON schema output and are routed only to endpoints that support it. Models
+that reject `temperature`, including `openai/gpt-6.1-sol`, are retried without it.
 
 ```yaml
 - uses: presubmit/ai-reviewer@latest
