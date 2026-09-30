@@ -74,11 +74,42 @@ function withRequiredParameters(init?: RequestInit): RequestInit | undefined {
   };
 }
 
+function errorMessages(payload: unknown): string[] {
+  if (!isRecord(payload)) return [];
+  const messages: string[] = [];
+  if (isRecord(payload.error) && typeof payload.error.message === "string") {
+    messages.push(payload.error.message);
+  }
+  if (!Array.isArray(payload.choices)) return messages;
+  for (const choice of payload.choices) {
+    if (isRecord(choice) && isRecord(choice.error) && typeof choice.error.message === "string") {
+      messages.push(choice.error.message);
+    }
+  }
+  return messages;
+}
+
 // GPT-6 Sol and similar reasoning models reject temperature. The AI SDK always
-// sends one, so drop it and retry when OpenRouter says the parameters are unsupported.
+// sends one, so drop it and retry when an error message says the parameter is unsupported.
 function rejectsTemperature(status: number, body: string): boolean {
-  if (status !== 400 && status !== 404) return false;
-  return /temperature/i.test(body) || /requested parameters/i.test(body);
+  if (status !== 200 && status !== 400 && status !== 404) return false;
+  let payload: unknown;
+  try {
+    payload = JSON.parse(body);
+  } catch {
+    return status !== 200 && /temperature|requested parameters/i.test(body);
+  }
+  const messages = errorMessages(payload);
+  if (messages.some((message) => /temperature/i.test(message))) return true;
+  return status !== 200 && messages.some((message) => /requested parameters/i.test(message));
+}
+
+function providerError(payload: JsonRecord): { body: JsonRecord; status: number } | undefined {
+  if (!isRecord(payload.error) || typeof payload.error.message !== "string") return undefined;
+  return {
+    body: { error: { message: payload.error.message, code: payload.error.code } },
+    status: httpStatus(payload.error.code),
+  };
 }
 
 function contentToString(content: unknown): string | null | undefined {
@@ -113,12 +144,10 @@ export function normalizeChatCompletionBody(payload: unknown): {
 } {
   if (!isRecord(payload)) return { body: payload };
 
-  if (!Array.isArray(payload.choices)) {
-    if (isRecord(payload.error) && typeof payload.error.message === "string") {
-      return { body: payload, status: httpStatus(payload.error.code) };
-    }
-    return { body: payload };
-  }
+  const failure = providerError(payload);
+  if (failure) return failure;
+
+  if (!Array.isArray(payload.choices)) return { body: payload };
 
   const choices = payload.choices.map((choice, position) => {
     if (!isRecord(choice)) return choice;
@@ -216,7 +245,7 @@ async function requireStructuredOutput(
 ): Promise<Response> {
   const next = withRequiredParameters(init);
   let response = await fetch(input, next);
-  if (!response.ok && typeof next?.body === "string") {
+  if (typeof next?.body === "string") {
     const body = JSON.parse(next.body);
     if ("temperature" in body) {
       const errorText = await response.clone().text();

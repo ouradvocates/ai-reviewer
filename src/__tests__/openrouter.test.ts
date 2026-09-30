@@ -177,6 +177,7 @@ describe("OpenRouter", () => {
 
     expect(
       normalizeChatCompletionBody({
+        choices: [],
         error: { message: "Provider disconnected", code: 502 },
       }),
     ).toEqual({
@@ -250,6 +251,48 @@ describe("OpenRouter", () => {
     expect(retried.temperature).toBeUndefined();
     expect(retried.provider).toEqual({ require_parameters: true });
     expect(retried.model).toBe("openai/gpt-6.1-sol");
+  });
+
+  test("retries when a temperature rejection is returned as HTTP 200", async () => {
+    createOpenRouter({ apiKey: "sk-or-test" });
+    const fetchImpl = (createOpenAI as jest.Mock).mock.calls[0][0].fetch as (
+      input: RequestInfo | URL,
+      init?: RequestInit,
+    ) => Promise<Response>;
+    const originalFetch = globalThis.fetch;
+    const fetchMock = jest
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            choices: [],
+            error: { message: "temperature is not supported", code: 400 },
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            choices: [{ message: { role: "assistant", content: "{\"ok\":true}" } }],
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        ),
+      );
+    globalThis.fetch = fetchMock;
+    try {
+      const response = await fetchImpl("https://openrouter.ai/api/v1/chat/completions", {
+        method: "POST",
+        body: JSON.stringify({ model: "openai/gpt-6.1-sol", temperature: 0 }),
+      });
+      expect(response.status).toBe(200);
+      await expect(response.json()).resolves.toEqual({
+        choices: [{ index: 0, message: { role: "assistant", content: "{\"ok\":true}" } }],
+      });
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
   test("accepts any OpenRouter model id", async () => {
