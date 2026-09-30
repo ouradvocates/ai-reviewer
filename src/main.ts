@@ -16,10 +16,16 @@ async function main(): Promise<void> {
         warning("Skipped: unsupported github event");
     }
   } catch (error) {
-    setFailed(
-      `Failed with error: ${error instanceof Error ? error.message : error}`
-    );
+    setFailed(`Failed with error: ${describeError(error)}`);
   }
+}
+
+function describeError(error: unknown): string {
+  if (!(error instanceof Error)) return String(error);
+  const responseBody = (error as { responseBody?: unknown }).responseBody;
+  if (typeof responseBody !== "string" || responseBody.trim() === "") return error.message;
+  const snippet = responseBody.replace(/\s+/g, " ").slice(0, 500);
+  return `${error.message}: ${snippet}`;
 }
 
 main();

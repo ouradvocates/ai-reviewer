@@ -5,6 +5,7 @@ import { runPrompt } from "../ai";
 import config from "../config";
 import {
   createOpenRouter,
+  normalizeChatCompletionBody,
   OPENROUTER_BASE_URL,
   OpenRouterProvider,
   strictJsonSchema,
@@ -142,6 +143,74 @@ describe("OpenRouter", () => {
     }
     const forwarded = JSON.parse(String(fetchMock.mock.calls[0][1].body));
     expect(forwarded.response_format.json_schema.schema).toEqual(expected);
+  });
+
+  test("normalizes OpenRouter chat responses the AI SDK would reject", async () => {
+    expect(
+      normalizeChatCompletionBody({
+        created: "1790715449",
+        choices: [
+          {
+            finish_reason: "stop",
+            message: {
+              role: "assistant",
+              content: [{ type: "reasoning", text: "think" }, { type: "output_text", text: "{\"title\":\"Node 24\"}" }],
+            },
+          },
+        ],
+      }),
+    ).toEqual({
+      body: {
+        created: 1790715449,
+        choices: [
+          {
+            index: 0,
+            finish_reason: "stop",
+            message: {
+              role: "assistant",
+              content: "{\"title\":\"Node 24\"}",
+            },
+          },
+        ],
+      },
+    });
+
+    expect(
+      normalizeChatCompletionBody({
+        error: { message: "Provider disconnected", code: 502 },
+      }),
+    ).toEqual({
+      body: { error: { message: "Provider disconnected", code: 502 } },
+      status: 502,
+    });
+
+    createOpenRouter({ apiKey: "sk-or-test" });
+    const fetchImpl = (createOpenAI as jest.Mock).mock.calls[0][0].fetch as (
+      input: RequestInfo | URL,
+      init?: RequestInit,
+    ) => Promise<Response>;
+    const originalFetch = globalThis.fetch;
+    const fetchMock = jest.fn(async () =>
+      new Response(
+        JSON.stringify({
+          choices: [{ message: { role: "assistant", content: [{ type: "text", text: "{\"ok\":true}" }] } }],
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      ),
+    );
+    globalThis.fetch = fetchMock;
+    try {
+      const response = await fetchImpl("https://openrouter.ai/api/v1/chat/completions", {
+        method: "POST",
+        body: JSON.stringify({ model: "openai/gpt-6.1-sol" }),
+      });
+      expect(response.status).toBe(200);
+      await expect(response.json()).resolves.toEqual({
+        choices: [{ index: 0, message: { role: "assistant", content: "{\"ok\":true}" } }],
+      });
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
   });
 
   test("retries without temperature when the model rejects it", async () => {
