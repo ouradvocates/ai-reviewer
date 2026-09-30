@@ -74,11 +74,169 @@ function withRequiredParameters(init?: RequestInit): RequestInit | undefined {
   };
 }
 
+function errorMessages(payload: unknown): string[] {
+  if (!isRecord(payload)) return [];
+  const messages: string[] = [];
+  if (isRecord(payload.error) && typeof payload.error.message === "string") {
+    messages.push(payload.error.message);
+  }
+  if (!Array.isArray(payload.choices)) return messages;
+  for (const choice of payload.choices) {
+    if (isRecord(choice) && isRecord(choice.error) && typeof choice.error.message === "string") {
+      messages.push(choice.error.message);
+    }
+  }
+  return messages;
+}
+
 // GPT-6 Sol and similar reasoning models reject temperature. The AI SDK always
-// sends one, so drop it and retry when OpenRouter says the parameters are unsupported.
+// sends one, so drop it and retry when an error message says the parameter is unsupported.
 function rejectsTemperature(status: number, body: string): boolean {
-  if (status !== 400 && status !== 404) return false;
-  return /temperature/i.test(body) || /requested parameters/i.test(body);
+  if (status !== 200 && status !== 400 && status !== 404) return false;
+  let payload: unknown;
+  try {
+    payload = JSON.parse(body);
+  } catch {
+    return status !== 200 && /temperature|requested parameters/i.test(body);
+  }
+  const messages = errorMessages(payload);
+  if (messages.some((message) => /temperature/i.test(message))) return true;
+  return status !== 200 && messages.some((message) => /requested parameters/i.test(message));
+}
+
+function providerError(payload: JsonRecord): { body: JsonRecord; status: number } | undefined {
+  if (!isRecord(payload.error) || typeof payload.error.message !== "string") return undefined;
+  return {
+    body: { error: { message: payload.error.message, code: payload.error.code } },
+    status: httpStatus(payload.error.code),
+  };
+}
+
+function contentToString(content: unknown): string | null | undefined {
+  if (content == null || typeof content === "string") return content as string | null | undefined;
+  if (typeof content === "number" || typeof content === "boolean") return String(content);
+  if (Array.isArray(content)) {
+    return content
+      .map((part) => {
+        if (typeof part === "string") return part;
+        if (!isRecord(part)) return "";
+        if (part.type === "reasoning" || part.type === "thinking") return "";
+        if (typeof part.text === "string") return part.text;
+        if (typeof part.content === "string") return part.content;
+        return "";
+      })
+      .join("");
+  }
+  if (isRecord(content) && typeof content.text === "string") return content.text;
+  return undefined;
+}
+
+function httpStatus(code: unknown): number {
+  return typeof code === "number" && code >= 400 && code < 600 ? code : 400;
+}
+
+// The bundled AI SDK accepts only a narrow chat-completion shape. OpenRouter
+// omits choices[].index, returns content as an array of parts, and sometimes
+// reports a provider failure as HTTP 200. Those all become "Invalid JSON response".
+export function normalizeChatCompletionBody(payload: unknown): {
+  body: unknown;
+  status?: number;
+} {
+  if (!isRecord(payload)) return { body: payload };
+
+  const failure = providerError(payload);
+  if (failure) return failure;
+
+  if (!Array.isArray(payload.choices)) return { body: payload };
+
+  const choices = payload.choices.map((choice, position) => {
+    if (!isRecord(choice)) return choice;
+    const next: JsonRecord = { ...choice, index: typeof choice.index === "number" ? choice.index : position };
+    if (!isRecord(next.message)) return next;
+
+    const message: JsonRecord = { ...next.message };
+    const content = contentToString(message.content);
+    if (content !== undefined) message.content = content;
+    if (message.role != null && message.role !== "assistant") delete message.role;
+    if (Array.isArray(message.tool_calls)) {
+      const calls = message.tool_calls.filter(
+        (call) =>
+          isRecord(call) &&
+          call.type === "function" &&
+          isRecord(call.function) &&
+          typeof call.function.name === "string" &&
+          typeof call.function.arguments === "string",
+      );
+      if (calls.length === message.tool_calls.length) message.tool_calls = calls;
+      else delete message.tool_calls;
+    }
+    next.message = message;
+
+    if (next.logprobs != null && !(isRecord(next.logprobs) && Array.isArray(next.logprobs.content))) {
+      delete next.logprobs;
+    }
+    return next;
+  });
+
+  const body: JsonRecord = { ...payload, choices };
+  if (typeof body.created === "string" && body.created.trim() !== "" && Number.isFinite(Number(body.created))) {
+    body.created = Number(body.created);
+  } else if (body.created != null && typeof body.created !== "number") {
+    delete body.created;
+  }
+
+  const failed = choices.find(
+    (choice) =>
+      isRecord(choice) &&
+      isRecord(choice.error) &&
+      typeof choice.error.message === "string" &&
+      (choice.message == null ||
+        !isRecord(choice.message) ||
+        choice.message.content == null ||
+        choice.message.content === ""),
+  );
+  if (isRecord(failed) && isRecord(failed.error)) {
+    return {
+      body: { error: { message: failed.error.message, code: failed.error.code } },
+      status: httpStatus(failed.error.code),
+    };
+  }
+
+  return { body };
+}
+
+async function adaptChatResponse(response: Response): Promise<Response> {
+  if (!response.ok) return response;
+  const text = await response.text();
+  if (!text.trim().startsWith("{") && !text.trim().startsWith("[")) {
+    return new Response(text, {
+      status: response.status,
+      statusText: response.statusText,
+      headers: response.headers,
+    });
+  }
+
+  let payload: unknown;
+  try {
+    payload = JSON.parse(text);
+  } catch {
+    return new Response(text, {
+      status: response.status,
+      statusText: response.statusText,
+      headers: response.headers,
+    });
+  }
+
+  const normalized = normalizeChatCompletionBody(payload);
+  const headers = new Headers(response.headers);
+  headers.delete("content-length");
+  headers.delete("content-encoding");
+  headers.set("content-type", "application/json");
+  return new Response(JSON.stringify(normalized.body), {
+    status: normalized.status ?? response.status,
+    statusText: response.statusText,
+    headers,
+  });
 }
 
 async function requireStructuredOutput(
@@ -86,20 +244,21 @@ async function requireStructuredOutput(
   init?: RequestInit,
 ): Promise<Response> {
   const next = withRequiredParameters(init);
-  const response = await fetch(input, next);
-  if (response.ok || typeof next?.body !== "string") return response;
-
-  const body = JSON.parse(next.body);
-  if (!("temperature" in body)) return response;
-
-  const errorText = await response.clone().text();
-  if (!rejectsTemperature(response.status, errorText)) return response;
-
-  const { temperature: _temperature, ...withoutTemperature } = body;
-  return fetch(input, {
-    ...next,
-    body: JSON.stringify(withoutTemperature),
-  });
+  let response = await fetch(input, next);
+  if (typeof next?.body === "string") {
+    const body = JSON.parse(next.body);
+    if ("temperature" in body) {
+      const errorText = await response.clone().text();
+      if (rejectsTemperature(response.status, errorText)) {
+        const { temperature: _temperature, ...withoutTemperature } = body;
+        response = await fetch(input, {
+          ...next,
+          body: JSON.stringify(withoutTemperature),
+        });
+      }
+    }
+  }
+  return adaptChatResponse(response);
 }
 
 // OpenRouter speaks the OpenAI API, so the existing structured-output adapter
