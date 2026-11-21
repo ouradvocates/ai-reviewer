@@ -77,6 +77,7 @@ describe('Messages', () => {
     const mockSummary: PullRequestSummary = {
       title: 'Test PR',
       description: 'This is a test PR',
+      why: 'Fixes the reported issue by correcting the failing path.',
       files: [
         { filename: 'src/test1.ts', summary: 'Modified test file', title: 'Test 1' },
         { filename: 'src/test2.ts', summary: 'Added new file', title: 'Test 2' }
@@ -86,6 +87,8 @@ describe('Messages', () => {
 
     const message = buildOverviewMessage(mockSummary, ['commit1', 'commit2']);
 
+    expect(message).toContain('## Why?');
+    expect(message).toContain('Fixes the reported issue by correcting the failing path.');
     expect(message).toContain('### Changes');
     expect(message).toContain('#### ⚙️ src');
     expect(message).toContain('test1.ts');

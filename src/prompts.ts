@@ -15,6 +15,7 @@ type PullRequestSummaryPrompt = {
 export type PullRequestSummary = {
   title: string;
   description: string;
+  why: string;
   files: {
     filename: string;
     summary: string;
@@ -28,12 +29,13 @@ export async function runSummaryPrompt(
 ): Promise<PullRequestSummary> {
   let systemPrompt = `You are a helpful assistant that summarizes Git Pull Requests (PRs).`;
 
-  systemPrompt += `Your task is to provide a concise description for the PR content - title, type, description and affected file summaries.\n`;
+  systemPrompt += `Your task is to provide a concise description for the PR content - title, type, description, why the change is needed, and affected file summaries.\n`;
 
   systemPrompt += `
 - VERY IMPORTANT: Be as brief as possible while maintaining clarity. Use short, direct sentences.
 - Keep in mind that the 'Original title', 'Original description' and 'Commit messages' sections may be partial, simplistic, non-informative or out of date. Hence, compare them to the PR diff code, and use them only as a reference.
 - The generated title and description should prioritize the most significant changes.
+- The Why? section explains the motivation for the change. When the title, description, or commit messages reference an issue or ticket, cite it and explain how the change addresses it. If no issue is referenced, explain the motivation from the diff and do not invent an issue.
 - When quoting variables or names from the code, use backticks (\`).
 - Return a one-line summary for each affected file or if there is nothing to summarize simply use the status of the change (ie. "New file").
 - Start the overview with a verb at past tense like "Started", "Commented", "Generated" etc...
@@ -87,6 +89,12 @@ Make sure each affected file is summarized and it's part of the returned JSON.
       .string()
       .default("")
       .describe("Informative description of the PR, describing its main theme"),
+    why: z
+      .string()
+      .default("")
+      .describe(
+        "Why this change is needed. Cite a referenced issue or ticket and explain how the change addresses it. Do not invent an issue."
+      ),
     files: z
       .array(fileSchema)
       .default([])

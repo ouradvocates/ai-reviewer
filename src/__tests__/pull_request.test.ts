@@ -72,6 +72,7 @@ describe('Pull Request Handler', () => {
     (runSummaryPrompt as jest.Mock).mockResolvedValue({
       title: 'Generated Title',
       description: 'Generated Description',
+      why: 'The linked issue needs this correction.',
       files: [{ filename: 'test.ts', summary: 'Test summary', title: 'Test title' }],
       type: ['ENHANCEMENT']
     });

@@ -88,7 +88,11 @@ export function buildOverviewMessage(
   summary: PullRequestSummary,
   commits: string[]
 ): string {
-  let message = `### Changes\n\n`;
+  let message = "";
+  if (summary.why?.trim()) {
+    message += `## Why?\n\n${summary.why.trim()}\n\n`;
+  }
+  message += `### Changes\n\n`;
 
   // Group files by directory structure and prioritize important changes
   const fileGroups = groupFilesByDirectory(summary.files);
